@@ -24,6 +24,9 @@
 #include <hrpModel/Sensor.h>
 #include "seqplay.h"
 
+#include "eiquadprog.h"
+#include "bspline.h"
+
 // Service implementation headers
 // <rtc-template block="service_impl_h">
 #include "SequencePlayerService_impl.h"
@@ -122,6 +125,7 @@ class SequencePlayer
 
   void setMaxIKError(double pos, double rot);
   void setMaxIKIteration(short iter);
+  void onlineTrajectoryModification();
  protected:
   // Configuration variable declaration
   // <rtc-template block="config_declare">
@@ -195,6 +199,11 @@ class SequencePlayer
   hrp::Vector3 m_offsetP, m_fixedP;
   hrp::Matrix33 m_offsetR, m_fixedR;
   double m_timeToStartPlaying;
+  hrp::dvector m_dr;
+  double m_tCurrent;
+  double m_tHit;
+  std::vector<BSpline::BSpline> m_bsplines;
+  std::vector<double> m_p;
   int dummy;
 };
 

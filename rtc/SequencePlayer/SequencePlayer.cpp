@@ -61,6 +61,11 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_error_pos(0.0001),
       m_error_rot(0.001),
       m_iteration(50),
+      m_dr(hrp::dvector::Zero(6)),
+      m_tCurrent(0.0),
+      m_tHit(0.0),
+      m_bsplines(std::vector<BSpline::BSpline>()),
+      m_p(std::vector<double>()),
       dummy(0)
 {
     sem_init(&m_waitSem, 0, 0);
@@ -890,6 +895,86 @@ void SequencePlayer::setMaxIKIteration(short iter){
     m_iteration= iter;
 }
 
+void SequencePlayer::onlineTrajectoryModification(){
+    const double epsilon = 1e-6;
+    int online_modified_min_id = -1;
+    // bsplineのサイズは1以上，その関節は動き始める前提
+    BSpline::BSpline bspline = m_bsplines.at(0);
+    hrp::dvector coeff_vector = bspline.calcCoeffVector(m_tCurrent);
+    int id_max = coeff_vector.size();
+    for (int i = 0; i < coeff_vector.size(); i++) {
+        if (std::abs(coeff_vector[i]) > epsilon) {
+            online_modified_min_id = i;
+            break;
+        }
+    }
+    int online_modified_max_id_1 = -1;
+    for (int i = 0; i < coeff_vector.size(); i++) {
+        if (std::abs(coeff_vector[coeff_vector.size() - i]) > epsilon) {
+            online_modified_min_id = coeff_vector.size() - i;
+            break;
+        }
+    }
+    // online_modified_max_id_1は実際のonline_modified_max_idより1大きい
+    int c = online_modified_max_id_1 - online_modified_min_id;  // ここは+1する必要がない
+    // online_modified_links ikを解く*limb*のlinkのリスト
+    // online_modified_jlist online_modified_linksの:jointのリスト
+    // k: online_modified_jlistの長さ
+#warning this is temporary
+    int k = 0;
+    // current_pose: m_tHitでの関節角度+rootlink6自由度の計算, fix-leg-to-coordsなどをして現在姿勢を計算(ikの初期値の姿勢)
+    // 元のEuslispコードではここで*robot*に関節角を設定している
+    std::vector<double> current_pose;
+    current_pose.clear();
+    for (size_t i = 0; i < m_bsplines.size(); i++) {
+        BSpline::BSpline bspline = m_bsplines.at(i);
+        hrp::dvector ps(id_max);
+        for (int j = 0; j < id_max; j++) {
+            ps[j] = m_p.at(id_max * i + j);
+        }
+#warning jointの数をちゃんと取得
+        // joint数33, bsplinesのサイズが39(virtualjoint6dofがあるため)
+        // TODO virtualjoint6dofをちゃんと設定する(ロボットを地面に接地させる)
+        if (i < 33) {
+            current_pose.push_back(bspline.calc(m_tHit, ps));
+        }
+    }
+    // dq
+    // まずはラケット先端をendcoordsにする必要がある
+    // ラケット先端をtargetに移動させる
+    // その上でIKを解く
+    // 関節角の差分を返す
+
+    // dp 返り値の宣言
+    hrp::dvector dp = hrp::dvector::Zero(m_p.size()); // id_max * ((length jlist) + 6) + 1(m_tHit)
+    // dp_modifiedを計算
+    hrp::dvector initial_state = hrp::dvector::Zero(c);
+    hrp::dmatrix equality_matrix = hrp::dmatrix::Zero(3, c);
+    // why m_bsplines.at(0)???
+    equality_matrix.col(0) = m_bsplines.at(0).calcCoeffVector(m_tCurrent).segment(online_modified_min_id, c); // 現在姿勢
+    equality_matrix.col(1) = m_bsplines.at(0).calcDeltaCoeffVector(m_tCurrent, 1).segment(online_modified_min_id, c); // 現在姿勢の速度
+    equality_matrix.col(2) = m_bsplines.at(0).calcCoeffVector(m_tHit).segment(online_modified_min_id, c); // タスク達成姿勢
+    hrp::dmatrix inequality_matrix = hrp::dmatrix::Zero(id_max - 1, c);
+    // 移植の問題でij逆にしている
+    for (int j = 0; j < c; j++) {
+        int i = online_modified_min_id + j;
+        // why m_bsplines.at(0)???
+        inequality_matrix.col(j) = m_bsplines.at(0).calcDeltaMatrix(1).col(i).segment(0, id_max - 1);
+    }
+    hrp::dmatrix eval_weight_matrix = hrp::dmatrix::Zero(c, c);
+    // 後ろの重みが大きいので，後ろに行けば行くほど修正量が小さくなるはず
+    for (int i = 0; i < c; i++) {
+        eval_weight_matrix(i, i) = i;
+    }
+    hrp::dvector dp_modified = hrp::dvector::Zero(m_p.size());
+    for (int j_k_id = 0; j_k_id < k; j_k_id++) {
+        hrp::dvector equality_coeff = hrp::dvector::Zero(3);
+        equality_coeff[2] = dq[j_k_id];
+        // this may have some bug
+        int id = id_max * (online_modified_min_id + j_k_id);
+    }
+    hrp::dvector r = ;
+}
 
 extern "C"
 {
