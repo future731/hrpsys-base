@@ -67,6 +67,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_tHit(0.0),
       m_bsplines(std::vector<BSpline::BSpline>()),
       m_p(hrp::dvector::Zero(0)),
+      m_target(hrp::dvector::Zero(6)),
       dummy(0)
 {
     sem_init(&m_waitSem, 0, 0);
@@ -262,7 +263,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         m_accRef.data.az = acc[2];
 
         if (m_fixedLink != ""){
-#warning 関節角設定例ここから
             for (int i=0; i<m_robot->numJoints(); i++){
                 m_robot->joint(i)->q = m_qRef.data[i];
             }
@@ -271,7 +271,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             }
             m_robot->rootLink()->R = hrp::rotFromRpy(rpy[0], rpy[1], rpy[2]);
             m_robot->calcForwardKinematics();
-#warning 関節角設定例ここまで (IKを解いて足を接地させる必要あり?)
             hrp::Link *root = m_robot->rootLink();
             hrp::Vector3 rootP;
             hrp::Matrix33 rootR;
@@ -906,15 +905,15 @@ void SequencePlayer::setMaxIKIteration(short iter){
  * m_p(bsplineの制御点は関節ごとにid_max個あるが，これをflattenして(関節数+6)*id_maxとしたもの)
  * m_tCurrent
  * m_tHit(関節角がこの時刻で正しくなっていて欲しいという時刻)
+ * m_target(ラケット面の目標位置姿勢)
  * m_robotのjoints
  * 補正のtarget(6次元)
  */
 void SequencePlayer::onlineTrajectoryModification(){
-#warning これ必要なのかな
-    Guard guard(m_mutex);
+    // Guard guard(m_mutex);
     const double epsilon = 1e-6;
     int online_modified_min_id = -1;
-    // bsplineのサイズは1以上，その関節は動き始める前提
+    // bsplineのサイズは1以上，その関節は動き始める前提?
     BSpline::BSpline bspline = m_bsplines.at(0);
     hrp::dvector coeff_vector = bspline.calcCoeffVector(m_tCurrent);
     int id_max = coeff_vector.size();
@@ -947,11 +946,9 @@ void SequencePlayer::onlineTrajectoryModification(){
         = std::vector<Link*>(m_robot->joints().begin() + indices.at(0),
                              m_robot->joints().begin() + indices.at(indices.size() - 1));
     int k = online_modified_jlist.size();
-    // current_pose: m_tHitでの関節角度+rootlink6自由度の計算, fix-leg-to-coordsなどをして現在姿勢を計算(ikの初期値の姿勢)
-    // 元のEuslispコードではここで*robot*に関節角を設定している
-#warning jointの数をちゃんと取得
-    int joint_num = 33;
-    hrp::dvector current_pose = hrp::dvector::Zero(joint_num);
+    // current_pose_full: m_tHitでの関節角度+rootlink6自由度の計算, fix-leg-to-coordsなどをして現在姿勢を計算(IKの初期値の姿勢)
+    int joint_num = m_robot->joints().size();
+    hrp::dvector current_pose_full = hrp::dvector::Zero(joint_num);
     for (size_t i = 0; i < m_bsplines.size(); i++) {
         BSpline::BSpline bspline = m_bsplines.at(i);
         hrp::dvector ps(id_max);
@@ -961,16 +958,67 @@ void SequencePlayer::onlineTrajectoryModification(){
         // joint数33, bsplinesのサイズが39(virtualjoint6dofがあるため)
         // TODO virtualjoint6dofをちゃんと設定する(ロボットを地面に接地させる)
         if (i < joint_num) {
-            current_pose[i] = (bspline.calc(m_tHit, ps));
+            current_pose_full[i] = bspline.calc(m_tHit, ps);
         }
     }
+    // current_pose: current_pose_fullのうち補正する関節のみのangle-vector
+    hrp::dvector current_pose = current_pose_full.segment(online_modified_min_id, k);
+    for (int i=0; i<m_robot->numJoints(); i++){
+        m_robot->joint(i)->q = current_pose_full[i];
+    }
+    for (int i=m_robot->numJoints(); i<m_robot->numJoints()+3; i++){
+        m_robot->rootLink()->p[i] = current_pose_full[i];
+    }
+#warning in euslisp data alignment is ypr
+
+    m_robot->rootLink()->R = hrp::rotFromRpy(
+            current_pose_full(m_robot->numJoints()+2),
+            current_pose_full(m_robot->numJoints()+1),
+            current_pose_full(m_robot->numJoints()+0));
+    // 後でdqを求めるため，ikを解く必要があり，その準備として今FKを解いておく
+    m_robot->calcForwardKinematics();
+
     // dq
-    // ラケット先端がtargetにある想定
+    // ラケット先端がm_target(6次元)にある想定
     // ラケットの姿勢を元にendcoordsを手先に設定
+    // 右手先端から見たラケットの打点
+    // irteusgl$ (send (send *robot* :rarm :end-coords) :transformation (send *sweet-spot* :copy-worldcoords) :local)
+    // #<coordinates #X10141278  332.34単位注意 0.0 332.34単位注意 / 2.186 -0.524 2.186>
+    //
+    // ラケットの打点から見た右手先端
+    // irteusgl$ (send (send *sweet-spot* :copy-worldcoords) :transformation (send *robot* :rarm :end-coords) :local)
+    // #<coordinates #X1071a898  1.137e-13 -470.0単位注意 -3.411e-13 / 2.186 -0.524 2.186>
     // その上でIKを解く
     // 関節角の差分を返す
-#warning this is temporary
     hrp::dvector dq = hrp::dvector::Zero(k);
+    string base_parent_name = m_robot->joint(indices.at(0))->parent->name;
+    string target_name = m_robot->joint(indices.at(indices.size()-1))->name;
+    // prepare joint path
+    hrp::JointPathExPtr manip = hrp::JointPathExPtr(new hrp::JointPathEx(m_robot, m_robot->link(base_parent_name), m_robot->link(target_name), dt, true, std::string(m_profile.instance_name)));
+    // m_targetはラケット先端
+    // m_targetを元に右腕先端の先端の位置姿勢を計算
+    hrp::Vector3 p_racket_to_rarm;
+    p_racket_to_rarm[0] = 0.0;
+    p_racket_to_rarm[1] = -0.470;
+    p_racket_to_rarm[1] = 0.0;
+    hrp::Vector3 omega_racket_to_rarm;
+    omega_racket_to_rarm[0] = 2.186;
+    omega_racket_to_rarm[1] = -0.524;
+    omega_racket_to_rarm[2] = 2.186;
+    hrp::Matrix33 R_racket_to_rarm = rodrigues(omega_racket_to_rarm.isZero()?omega_racket_to_rarm:omega_racket_to_rarm.normalized(), omega_racket_to_rarm.norm());
+    // 世界座標系におけるrarmの位置姿勢
+    hrp::Vector3 p = R_racket_to_rarm * p_racket_to_rarm + m_target.segment(0, 3);
+    hrp::Vector3 omega_world_to_racket = m_target.segment(3, 3);
+    hrp::Matrix33 R_world_to_racket = rodrigues(omega_world_to_racket.isZero()?omega_world_to_racket:omega_world_to_racket.normalized(), omega_world_to_racket.norm());
+    hrp::Matrix33 R = R_world_to_racket * R_racket_to_rarm;
+    bool ik_succeeded = manip->calcInverseKinematics2(p, R);
+    if (!ik_succeeded) {
+        std::cerr << "[onlineTrajectoryModification] ik failed" << std::endl;
+        return;
+    }
+    for (int i = 0; i < k; i++) {
+        dq[i] = m_robot->joint(online_modified_min_id + i)->q - current_pose[i];
+    }
 
     // dp 返り値の宣言
     hrp::dvector dp = hrp::dvector::Zero(m_p.size()); // id_max * ((length jlist) + 6) + 1(m_tHit)
@@ -1004,13 +1052,11 @@ void SequencePlayer::onlineTrajectoryModification(){
         hrp::dvector r = (m_p.segment(id, id_max).transpose() * m_bsplines.at(0).calcDeltaMatrix(1)).segment(0, id_max - 1);
         hrp::dvector inequality_min_vector = hrp::dvector::Zero(id_max - 1);
         for (int i = 0; i < id_max - 1; i++) {
-#warning 関節最小角速度取得 順番がeuslispと違うと死ぬ
             inequality_min_vector[i] = online_modified_jlist.at(j_k_id)->lvlimit;
         }
         inequality_min_vector -= r;
         hrp::dvector inequality_max_vector = hrp::dvector::Zero(id_max - 1);
         for (int i = 0; i < id_max - 1; i++) {
-#warning 関節最大角速度取得 順番がeuslispと違うと死ぬ
             inequality_max_vector[i] = online_modified_jlist.at(j_k_id)->uvlimit;
         }
         inequality_max_vector -= r;
