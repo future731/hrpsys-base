@@ -1,4 +1,5 @@
 // -*- C++ -*-
+// clang-format off
 /*!
  * @file  SequencePlayer.cpp
  * @brief sequence player component
@@ -65,7 +66,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_tCurrent(0.0),
       m_tHit(0.0),
       m_bsplines(std::vector<BSpline::BSpline>()),
-      m_p(std::vector<double>()),
+      m_p(hrp::dvector::Zero(0)),
       dummy(0)
 {
     sem_init(&m_waitSem, 0, 0);
@@ -261,6 +262,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         m_accRef.data.az = acc[2];
 
         if (m_fixedLink != ""){
+#warning 関節角設定例ここから
             for (int i=0; i<m_robot->numJoints(); i++){
                 m_robot->joint(i)->q = m_qRef.data[i];
             }
@@ -269,6 +271,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             }
             m_robot->rootLink()->R = hrp::rotFromRpy(rpy[0], rpy[1], rpy[2]);
             m_robot->calcForwardKinematics();
+#warning 関節角設定例ここまで (IKを解いて足を接地させる必要あり?)
             hrp::Link *root = m_robot->rootLink();
             hrp::Vector3 rootP;
             hrp::Matrix33 rootR;
@@ -895,7 +898,20 @@ void SequencePlayer::setMaxIKIteration(short iter){
     m_iteration= iter;
 }
 
+/*
+ * @brief BSpline関数で示された各関節軌道をオンライン調整する関数
+ * @note この関数を呼ぶ際は上位の関節角指定を必ず書き換え続けなければならない．
+ * この関数を呼ぶ前に以下の変数は初期化されていなければならない．
+ * m_bsplines(関節数+rootlinkの6dofの長さある．1要素あたりの山の数はid_maxという変数で管理することになる)
+ * m_p(bsplineの制御点は関節ごとにid_max個あるが，これをflattenして(関節数+6)*id_maxとしたもの)
+ * m_tCurrent
+ * m_tHit(関節角がこの時刻で正しくなっていて欲しいという時刻)
+ * m_robotのjoints
+ * 補正のtarget(6次元)
+ */
 void SequencePlayer::onlineTrajectoryModification(){
+#warning これ必要なのかな
+    Guard guard(m_mutex);
     const double epsilon = 1e-6;
     int online_modified_min_id = -1;
     // bsplineのサイズは1以上，その関節は動き始める前提
@@ -917,33 +933,44 @@ void SequencePlayer::onlineTrajectoryModification(){
     }
     // online_modified_max_id_1は実際のonline_modified_max_idより1大きい
     int c = online_modified_max_id_1 - online_modified_min_id;  // ここは+1する必要がない
-    // online_modified_links ikを解く*limb*のlinkのリスト
-    // online_modified_jlist online_modified_linksの:jointのリスト
-    // k: online_modified_jlistの長さ
-#warning this is temporary
-    int k = 0;
+    // 腕だけik
+    // online_modified_links ikを解く*limb*のlink(jointを持っている)のリスト
+    // RARM_LINK0, 1, 2, 3, 4, 5, 6, 7
+    std::vector<int> indices;
+    indices.clear();
+    const char* gname = "RARM";
+    if (! m_seq->getJointGroup(gname, indices)) {
+        std::cerr << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
+        return;
+    }
+    std::vector<Link*> online_modified_jlist
+        = std::vector<Link*>(m_robot->joints().begin() + indices.at(0),
+                             m_robot->joints().begin() + indices.at(indices.size() - 1));
+    int k = online_modified_jlist.size();
     // current_pose: m_tHitでの関節角度+rootlink6自由度の計算, fix-leg-to-coordsなどをして現在姿勢を計算(ikの初期値の姿勢)
     // 元のEuslispコードではここで*robot*に関節角を設定している
-    std::vector<double> current_pose;
-    current_pose.clear();
+#warning jointの数をちゃんと取得
+    int joint_num = 33;
+    hrp::dvector current_pose = hrp::dvector::Zero(joint_num);
     for (size_t i = 0; i < m_bsplines.size(); i++) {
         BSpline::BSpline bspline = m_bsplines.at(i);
         hrp::dvector ps(id_max);
         for (int j = 0; j < id_max; j++) {
-            ps[j] = m_p.at(id_max * i + j);
+            ps[j] = m_p[id_max * i + j];
         }
-#warning jointの数をちゃんと取得
         // joint数33, bsplinesのサイズが39(virtualjoint6dofがあるため)
         // TODO virtualjoint6dofをちゃんと設定する(ロボットを地面に接地させる)
-        if (i < 33) {
-            current_pose.push_back(bspline.calc(m_tHit, ps));
+        if (i < joint_num) {
+            current_pose[i] = (bspline.calc(m_tHit, ps));
         }
     }
     // dq
-    // まずはラケット先端をendcoordsにする必要がある
-    // ラケット先端をtargetに移動させる
+    // ラケット先端がtargetにある想定
+    // ラケットの姿勢を元にendcoordsを手先に設定
     // その上でIKを解く
     // 関節角の差分を返す
+#warning this is temporary
+    hrp::dvector dq = hrp::dvector::Zero(k);
 
     // dp 返り値の宣言
     hrp::dvector dp = hrp::dvector::Zero(m_p.size()); // id_max * ((length jlist) + 6) + 1(m_tHit)
@@ -969,11 +996,25 @@ void SequencePlayer::onlineTrajectoryModification(){
     hrp::dvector dp_modified = hrp::dvector::Zero(m_p.size());
     for (int j_k_id = 0; j_k_id < k; j_k_id++) {
         hrp::dvector equality_coeff = hrp::dvector::Zero(3);
-        equality_coeff[2] = dq[j_k_id];
+        equality_coeff[2] = -dq[j_k_id]; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
         // this may have some bug
         int id = id_max * (online_modified_min_id + j_k_id);
+        // why m_bsplines.at(0)?
+#warning radになっているか確認
+        hrp::dvector r = (m_p.segment(id, id_max).transpose() * m_bsplines.at(0).calcDeltaMatrix(1)).segment(0, id_max - 1);
+        hrp::dvector inequality_min_vector = hrp::dvector::Zero(id_max - 1);
+        for (int i = 0; i < id_max - 1; i++) {
+#warning 関節最小角速度取得 順番がeuslispと違うと死ぬ
+            inequality_min_vector[i] = online_modified_jlist.at(j_k_id)->lvlimit;
+        }
+        inequality_min_vector -= r;
+        hrp::dvector inequality_max_vector = hrp::dvector::Zero(id_max - 1);
+        for (int i = 0; i < id_max - 1; i++) {
+#warning 関節最大角速度取得 順番がeuslispと違うと死ぬ
+            inequality_max_vector[i] = online_modified_jlist.at(j_k_id)->uvlimit;
+        }
+        inequality_max_vector -= r;
     }
-    hrp::dvector r = ;
 }
 
 extern "C"
@@ -989,4 +1030,4 @@ extern "C"
 
 };
 
-
+// clang-format on

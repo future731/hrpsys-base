@@ -1,4 +1,5 @@
 // -*- C++ -*-
+// clang-format off
 /*!
  * @file  SequencePlayer.h
  * @brief sequence player component
@@ -203,7 +204,7 @@ class SequencePlayer
   double m_tCurrent;
   double m_tHit;
   std::vector<BSpline::BSpline> m_bsplines;
-  std::vector<double> m_p;
+  hrp::dvector m_p;
   int dummy;
 };
 
@@ -214,3 +215,4 @@ extern "C"
 };
 
 #endif // SEQUENCEPLAYER_H
+// clang-format on
