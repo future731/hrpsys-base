@@ -35,8 +35,7 @@ module OpenHRP
      * @return true joint angles are set successfully, false otherwise
      */
     boolean setJointAngles(in dSequence jvs, in double tm);
-
-    /**
+/**
      * @brief Interpolate joint angles on robot using duration specified by \em tm. Returns without waiting for whole sequence to be sent to robot.
      * @param jvs sequence of joint angles
      * @param mask binary vector which selects joints to be interpolated
@@ -240,6 +239,27 @@ module OpenHRP
      * @return true joint angles are set successfully, false otherwise
      */
     boolean setJointAnglesSequenceFull(in dSequenceSequence jvss, in dSequenceSequence vels,  in dSequenceSequence torques, in dSequenceSequence poss, in dSequenceSequence rpys, in dSequenceSequence accs, in dSequenceSequence zmps, in dSequenceSequence wrenchs, in dSequenceSequence optionals, in dSequence tms);
+
+    /**
+     * @brief With bspline joint angle orbit, interpolate all joint angles, using duration specified by \em tm. Returns without waiting for whole sequence to be sent to robot. If this function called during the robot moves, it overwrite current goal.  [>= 315.5.0]
+     * @param bsorder bspline recursive order []
+     * @param bsid bspline id max []
+     * @param bsxmin bspline starting time [s]
+     * @param bsxmax bspline finishing time [s]
+     * @param jvss sequence of sequence of joint angles [rad]
+     * @param vels sequence of sequence of velocities [rad/s]
+     * @param torques sequence of sequence of torques [Nm]
+     * @param poss sequence of waist pos [m]
+     * @param rpys sequence of waist rpy [rad]
+     * @param accs sequence of sensor acc [m/ss]
+     * @param zmps sequence of zmp in the waist frame [m]
+     * @param wrenches sequence of wrenches [N, Nm]
+     * @param optionss sequence of options []
+     * @param tms sequence of duration [s]
+     * @return true joint angles are set successfully, false otherwise
+     */
+    // boolean setJointAnglesSequenceFullWithBSpline(in short bsorder, in short bsid, in double bsxmin, in double bsxmax, in dSequence bsp, in dSequenceSequence jvss, in dSequenceSequence vels,  in dSequenceSequence torques, in dSequenceSequence poss, in dSequenceSequence rpys, in dSequenceSequence accs, in dSequenceSequence zmps, in dSequenceSequence wrenchs, in dSequenceSequence optionals, in dSequence tms);
+    // boolean setJointAnglesSequenceFullTest(in dSequenceSequence jvss, in dSequenceSequence vels,  in dSequenceSequence torques, in dSequenceSequence poss, in dSequenceSequence rpys, in dSequenceSequence accs, in dSequenceSequence zmps, in dSequenceSequence wrenchs, in dSequenceSequence optionals, in dSequence tms);
 
     /**
      * @brief clear current JointAngles [>= 315.5.0]

@@ -253,6 +253,17 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
     }else{
 	Guard guard(m_mutex);
 
+        // calc current q from p
+        /*
+         * TODO
+         * m_bsplines
+         * m_p
+         * m_tCurrent
+         * m_tHit
+         * m_target
+         がvalidになるようにしておく
+         */
+        this->onlineTrajectoryModification();
         double zmp[3], acc[3], pos[3], rpy[3], wrenches[6*m_wrenches.size()];
         m_seq->get(m_qRef.data.get_buffer(), zmp, acc, pos, rpy, m_tqRef.data.get_buffer(), wrenches, m_optionalData.data.get_buffer());
         m_zmpRef.data.x = zmp[0];
@@ -547,6 +558,59 @@ bool SequencePlayer::setJointAnglesSequenceFull(const OpenHRP::dSequenceSequence
     for ( unsigned int i = 0; i < i_tms.length();  i++ )  v_tms.push_back(i_tms[i]);
     return m_seq->setJointAnglesSequenceFull(v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
 }
+
+bool SequencePlayer::setJointAnglesSequenceFullWithBSpline(short i_bspline_recursive_order, short i_bspline_id, double i_bspline_tmin, double i_bspline_tmax, const OpenHRP::dSequence i_bspline_p, const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms)
+{
+    if ( m_debugLevel > 0 ) {
+        std::cerr << __PRETTY_FUNCTION__ << std::endl;
+    }
+    Guard guard(m_mutex);
+
+    if (!setInitialState()) return false;
+
+    int len = i_jvss.length();
+    std::vector<const double*> v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals;
+    std::vector<double> v_bspline_p, v_tms;
+    for ( unsigned int i = 0; i < i_bspline_p.length(); i++ ) v_bspline_p.push_back(i_bspline_p[i]);
+    for ( unsigned int i = 0; i < i_jvss.length(); i++ ) v_jvss.push_back(i_jvss[i].get_buffer());
+    for ( unsigned int i = 0; i < i_vels.length(); i++ ) v_vels.push_back(i_vels[i].get_buffer());
+    for ( unsigned int i = 0; i < i_torques.length(); i++ ) v_torques.push_back(i_torques[i].get_buffer());
+    for ( unsigned int i = 0; i < i_poss.length(); i++ ) v_poss.push_back(i_poss[i].get_buffer());
+    for ( unsigned int i = 0; i < i_rpys.length(); i++ ) v_rpys.push_back(i_rpys[i].get_buffer());
+    for ( unsigned int i = 0; i < i_accs.length(); i++ ) v_accs.push_back(i_accs[i].get_buffer());
+    for ( unsigned int i = 0; i < i_zmps.length(); i++ ) v_zmps.push_back(i_zmps[i].get_buffer());
+    for ( unsigned int i = 0; i < i_wrenches.length(); i++ ) v_wrenches.push_back(i_wrenches[i].get_buffer());
+    for ( unsigned int i = 0; i < i_optionals.length(); i++ ) v_optionals.push_back(i_optionals[i].get_buffer());
+    for ( unsigned int i = 0; i < i_tms.length();  i++ )  v_tms.push_back(i_tms[i]);
+    return m_seq->setJointAnglesSequenceFullWithBSpline(i_bspline_recursive_order, i_bspline_id, i_bspline_tmin, i_bspline_tmax, v_bspline_p, v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
+}
+
+/*
+bool SequencePlayer::setJointAnglesSequenceFullTest(const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms)
+{
+    if ( m_debugLevel > 0 ) {
+        std::cerr << __PRETTY_FUNCTION__ << std::endl;
+    }
+    Guard guard(m_mutex);
+
+    if (!setInitialState()) return false;
+
+    int len = i_jvss.length();
+    std::vector<const double*> v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals;
+    std::vector<double> v_tms;
+    for ( unsigned int i = 0; i < i_jvss.length(); i++ ) v_jvss.push_back(i_jvss[i].get_buffer());
+    for ( unsigned int i = 0; i < i_vels.length(); i++ ) v_vels.push_back(i_vels[i].get_buffer());
+    for ( unsigned int i = 0; i < i_torques.length(); i++ ) v_torques.push_back(i_torques[i].get_buffer());
+    for ( unsigned int i = 0; i < i_poss.length(); i++ ) v_poss.push_back(i_poss[i].get_buffer());
+    for ( unsigned int i = 0; i < i_rpys.length(); i++ ) v_rpys.push_back(i_rpys[i].get_buffer());
+    for ( unsigned int i = 0; i < i_accs.length(); i++ ) v_accs.push_back(i_accs[i].get_buffer());
+    for ( unsigned int i = 0; i < i_zmps.length(); i++ ) v_zmps.push_back(i_zmps[i].get_buffer());
+    for ( unsigned int i = 0; i < i_wrenches.length(); i++ ) v_wrenches.push_back(i_wrenches[i].get_buffer());
+    for ( unsigned int i = 0; i < i_optionals.length(); i++ ) v_optionals.push_back(i_optionals[i].get_buffer());
+    for ( unsigned int i = 0; i < i_tms.length();  i++ )  v_tms.push_back(i_tms[i]);
+    return m_seq->setJointAnglesSequenceFullTest(v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
+}
+*/
 
 bool SequencePlayer::setBasePos(const double *pos, double tm)
 {
@@ -899,6 +963,7 @@ void SequencePlayer::setMaxIKIteration(short iter){
 
 /*
  * @brief BSpline関数で示された各関節軌道をオンライン調整する関数
+ * @param 関節角をまとめた配列
  * @note この関数を呼ぶ際は上位の関節角指定を必ず書き換え続けなければならない．
  * この関数を呼ぶ前に以下の変数は初期化されていなければならない．
  * m_bsplines(関節数+rootlinkの6dofの長さある．1要素あたりの山の数はid_maxという変数で管理することになる)
@@ -906,10 +971,10 @@ void SequencePlayer::setMaxIKIteration(short iter){
  * m_tCurrent
  * m_tHit(関節角がこの時刻で正しくなっていて欲しいという時刻)
  * m_target(ラケット面の目標位置姿勢)
- * m_robotのjoints
  * 補正のtarget(6次元)
+ * 返り値としてdp(m_pと同じ長さ)
  */
-void SequencePlayer::onlineTrajectoryModification(){
+hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // Guard guard(m_mutex);
     const double epsilon = 1e-6;
     int online_modified_min_id = -1;
@@ -917,16 +982,16 @@ void SequencePlayer::onlineTrajectoryModification(){
     BSpline::BSpline bspline = m_bsplines.at(0);
     hrp::dvector coeff_vector = bspline.calcCoeffVector(m_tCurrent);
     int id_max = coeff_vector.size();
-    for (int i = 0; i < coeff_vector.size(); i++) {
+    for (int i = 0; i < id_max; i++) {
         if (std::abs(coeff_vector[i]) > epsilon) {
             online_modified_min_id = i;
             break;
         }
     }
     int online_modified_max_id_1 = -1;
-    for (int i = 0; i < coeff_vector.size(); i++) {
-        if (std::abs(coeff_vector[coeff_vector.size() - i]) > epsilon) {
-            online_modified_min_id = coeff_vector.size() - i;
+    for (int i = 0; i < id_max; i++) {
+        if (std::abs(coeff_vector[id_max - i]) > epsilon) {
+            online_modified_min_id = id_max - i;
             break;
         }
     }
@@ -940,7 +1005,7 @@ void SequencePlayer::onlineTrajectoryModification(){
     const char* gname = "RARM";
     if (! m_seq->getJointGroup(gname, indices)) {
         std::cerr << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
-        return;
+        return hrp::dvector::Zero(m_p.size()); // id_max * ((length jlist) + 6) + 1(m_tHit)
     }
     std::vector<Link*> online_modified_jlist
         = std::vector<Link*>(m_robot->joints().begin() + indices.at(0),
@@ -1014,14 +1079,12 @@ void SequencePlayer::onlineTrajectoryModification(){
     bool ik_succeeded = manip->calcInverseKinematics2(p, R);
     if (!ik_succeeded) {
         std::cerr << "[onlineTrajectoryModification] ik failed" << std::endl;
-        return;
+        return hrp::dvector::Zero(m_p.size()); // id_max * ((length jlist) + 6) + 1(m_tHit)
     }
     for (int i = 0; i < k; i++) {
         dq[i] = m_robot->joint(online_modified_min_id + i)->q - current_pose[i];
     }
 
-    // dp 返り値の宣言
-    hrp::dvector dp = hrp::dvector::Zero(m_p.size()); // id_max * ((length jlist) + 6) + 1(m_tHit)
     // dp_modifiedを計算
     hrp::dvector initial_state = hrp::dvector::Zero(c);
     hrp::dmatrix equality_matrix = hrp::dmatrix::Zero(3, c);
@@ -1041,7 +1104,8 @@ void SequencePlayer::onlineTrajectoryModification(){
     for (int i = 0; i < c; i++) {
         eval_weight_matrix(i, i) = i;
     }
-    hrp::dvector dp_modified = hrp::dvector::Zero(m_p.size());
+    hrp::dvector eval_coeff_vector = hrp::dvector::Zero(c);
+    hrp::dvector dp_modified = hrp::dvector::Zero(k * c);
     for (int j_k_id = 0; j_k_id < k; j_k_id++) {
         hrp::dvector equality_coeff = hrp::dvector::Zero(3);
         equality_coeff[2] = -dq[j_k_id]; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
@@ -1060,8 +1124,34 @@ void SequencePlayer::onlineTrajectoryModification(){
             inequality_max_vector[i] = online_modified_jlist.at(j_k_id)->uvlimit;
         }
         inequality_max_vector -= r;
+#warning ここconst参照的なものにできないか確かめる
+        hrp::dmatrix G = eval_weight_matrix;
+        hrp::dvector g0 = eval_coeff_vector;
+        hrp::dmatrix CE = equality_matrix;
+        hrp::dvector ce0 = -equality_coeff; // sign has to be inverted
+        hrp::dmatrix CI = hrp::dmatrix::Zero(2, (id_max - 1) * c);
+        // flatten
+        for (int i = 0; i < id_max - 1; i++) {
+            for (int j = 0; j < c; j++) {
+                CI(0, i * (id_max - 1) + j) = inequality_matrix(i, j);
+                CI(1, i * (id_max - 1) + j) = -inequality_matrix(i, j); // sign has to be inverted
+            }
+        }
+        hrp::dvector ci0 = hrp::dvector::Zero(2*(id_max - 1));
+        ci0.segment(0, id_max - 1) = inequality_min_vector;
+        ci0.segment(id_max, id_max - 1) = inequality_max_vector;
+        hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
+        Eigen::solve_quadprog(G, g0, CE, ce0, CI, ci0, tmp_dp_modified); // this returns optimization value, but discarded.
+        dp_modified.segment(j_k_id * k, k) = tmp_dp_modified;
     }
+    // dp 返り値の宣言
+    hrp::dvector dp = hrp::dvector::Zero(m_p.size()); // id_max * ((length jlist) + 6) + 1(m_tHit)
+    for (size_t i = 0; i < m_bsplines.size(); i++) {
+        dp.segment(i * id_max, k) = dp_modified.segment(i * k, k);
+    }
+    return dp;
 }
+
 
 extern "C"
 {

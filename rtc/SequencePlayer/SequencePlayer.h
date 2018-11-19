@@ -107,6 +107,8 @@ class SequencePlayer
   bool setJointAngles(const double *angles, const bool *mask, double tm);
   bool setJointAnglesSequence(const OpenHRP::dSequenceSequence angless, const OpenHRP::bSequence& mask, const OpenHRP::dSequence& times);
   bool setJointAnglesSequenceFull(const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms);
+  bool setJointAnglesSequenceFullWithBSpline(short i_bspline_recursive_order, short i_bspline_id, double i_bspline_tmin, double i_bspline_tmax, const OpenHRP::dSequence i_bspline_p, const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms);
+  // bool setJointAnglesSequenceFullTest(const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms);
   bool clearJointAngles();
   bool setBasePos(const double *pos, double tm);
   bool setBaseRpy(const double *rpy, double tm);
@@ -126,7 +128,7 @@ class SequencePlayer
 
   void setMaxIKError(double pos, double rot);
   void setMaxIKIteration(short iter);
-  void onlineTrajectoryModification();
+  hrp::dvector onlineTrajectoryModification();
  protected:
   // Configuration variable declaration
   // <rtc-template block="config_declare">
