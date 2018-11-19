@@ -13,6 +13,7 @@
 #include <rtm/idl/BasicDataType.hh>
 #include <rtm/idl/ExtendedDataTypes.hh>
 #include "hrpsys/idl/HRPDataTypes.hh"
+#include "hrpsys/idl/RobotHardwareService.hh"
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
 #include <rtm/CorbaPort.h>
@@ -130,6 +131,11 @@ class RobotHardware
   TimedDoubleSeq m_dqRef;
   InPort<TimedDoubleSeq> m_dqRefIn;
   /**
+     \brief array of reference accelerations of joint with jointId
+  */
+  TimedDoubleSeq m_ddqRef;
+  InPort<TimedDoubleSeq> m_ddqRefIn;
+  /**
      \brief array of reference torques of joint with jointId
   */
   TimedDoubleSeq m_tauRef;
@@ -154,6 +160,10 @@ class RobotHardware
   */
   TimedDoubleSeq m_ctau;
   /**
+     \brief array of PD controller torques of joint with jointId
+  */
+  TimedDoubleSeq m_pdtau;
+  /**
      \brief vector of actual acceleration (vector length = number of acceleration sensors)
   */
   std::vector<TimedAcceleration3D> m_acc;
@@ -176,6 +186,7 @@ class RobotHardware
   OutPort<TimedDoubleSeq> m_dqOut;
   OutPort<TimedDoubleSeq> m_tauOut;
   OutPort<TimedDoubleSeq> m_ctauOut;
+  OutPort<TimedDoubleSeq> m_pdtauOut;
   std::vector<OutPort<TimedAcceleration3D> *> m_accOut;
   std::vector<OutPort<TimedAngularVelocity3D> *> m_rateOut;
   std::vector<OutPort<TimedDoubleSeq> *> m_forceOut;
