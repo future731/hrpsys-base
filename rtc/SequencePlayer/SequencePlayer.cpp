@@ -62,7 +62,6 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_error_pos(0.0001),
       m_error_rot(0.001),
       m_iteration(50),
-      m_dr(hrp::dvector::Zero(6)),
       m_tCurrent(0.0),
       m_tHit(0.0),
       m_bsplines(std::vector<BSpline::BSpline>()),
@@ -91,7 +90,7 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
     addInPort("basePosInit", m_basePosInitIn);
     addInPort("baseRpyInit", m_baseRpyInitIn);
     addInPort("zmpRefInit", m_zmpRefInitIn);
-  
+
     // Set OutPort buffer
     addOutPort("qRef", m_qRefOut);
     addOutPort("tqRef", m_tqRefOut);
@@ -100,19 +99,19 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
     addOutPort("basePos", m_basePosOut);
     addOutPort("baseRpy", m_baseRpyOut);
     addOutPort("optionalData", m_optionalDataOut);
-  
+
     // Set service provider to Ports
     m_SequencePlayerServicePort.registerProvider("service0", "SequencePlayerService", m_service0);
-  
+
     // Set service consumers to Ports
-  
+
     // Set CORBA Service Ports
     addPort(m_SequencePlayerServicePort);
-  
+
     // </rtc-template>
     // <rtc-template block="bind_config">
     // Bind variables and configuration variable
-  
+
     bindParameter("debugLevel", m_debugLevel, "0");
     bindParameter("fixedLink", m_fixedLink, "");
     // </rtc-template>
@@ -130,10 +129,10 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
     }
     nameServer = nameServer.substr(0, comPos);
     RTC::CorbaNaming naming(rtcManager.getORB(), nameServer.c_str());
-    if (!loadBodyFromModelLoader(m_robot, prop["model"].c_str(), 
+    if (!loadBodyFromModelLoader(m_robot, prop["model"].c_str(),
                                  CosNaming::NamingContext::_duplicate(naming.getRootContext())
                                  )){
-        std::cerr << "failed to load model[" << prop["model"] << "]" 
+        std::cerr << "failed to load model[" << prop["model"] << "]"
                   << std::endl;
     }
 
@@ -214,7 +213,7 @@ RTC::ReturnCode_t SequencePlayer::onFinalize()
 RTC::ReturnCode_t SequencePlayer::onActivated(RTC::UniqueId ec_id)
 {
     std::cout << "SequencePlayer::onActivated(" << ec_id << ")" << std::endl;
-    
+
     return RTC::RTC_OK;
 }
 
@@ -269,8 +268,8 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         m_zmpRef.data.x = zmp[0];
         m_zmpRef.data.y = zmp[1];
         m_zmpRef.data.z = zmp[2];
-        m_accRef.data.ax = acc[0]; 
-        m_accRef.data.ay = acc[1]; 
+        m_accRef.data.ax = acc[0];
+        m_accRef.data.ay = acc[1];
         m_accRef.data.az = acc[2];
 
         if (m_fixedLink != ""){
@@ -451,7 +450,7 @@ bool SequencePlayer::setJointAngles(const double *angles, double tm)
     return true;
 }
 
-bool SequencePlayer::setJointAngles(const double *angles, const bool *mask, 
+bool SequencePlayer::setJointAngles(const double *angles, const bool *mask,
                                     double tm)
 {
     if ( m_debugLevel > 0 ) {
@@ -559,7 +558,7 @@ bool SequencePlayer::setJointAnglesSequenceFull(const OpenHRP::dSequenceSequence
     return m_seq->setJointAnglesSequenceFull(v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
 }
 
-bool SequencePlayer::setJointAnglesSequenceFullWithBSpline(short i_bsorder, short i_bsid, double i_bstmin, double i_bstmax, const OpenHRP::dSequence i_bsp, const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms)
+bool SequencePlayer::setJointAnglesSequenceFullWithBSpline(short i_bsorder, short i_bsid, double i_bstmin, double i_bsthit, double i_bstmax, const OpenHRP::dSequence i_bsp, const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms)
 {
     if ( m_debugLevel > 0 ) {
         std::cerr << __PRETTY_FUNCTION__ << std::endl;
@@ -568,10 +567,16 @@ bool SequencePlayer::setJointAnglesSequenceFullWithBSpline(short i_bsorder, shor
 
     if (!setInitialState()) return false;
 
+    m_tCurrent = i_bstmin;
+    m_tHit = i_bsthit;
+    for (int i = 0; i < i_bsid; i++) {
+        m_bsplines.push_back(BSpline::BSpline(i_bsorder, i_bsorder, i_bsid, i_bsid, i_bstmin, i_bstmax));
+    }
+
     int len = i_jvss.length();
     std::vector<const double*> v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals;
-    std::vector<double> v_bsp, v_tms;
-    for ( unsigned int i = 0; i < i_bsp.length(); i++ ) v_bsp.push_back(i_bsp[i]);
+    std::vector<double> v_tms;
+    for ( unsigned int i = 0; i < i_bsp.length(); i++ ) m_p[i] = i_bsp[i];
     for ( unsigned int i = 0; i < i_jvss.length(); i++ ) v_jvss.push_back(i_jvss[i].get_buffer());
     for ( unsigned int i = 0; i < i_vels.length(); i++ ) v_vels.push_back(i_vels[i].get_buffer());
     for ( unsigned int i = 0; i < i_torques.length(); i++ ) v_torques.push_back(i_torques[i].get_buffer());
@@ -582,7 +587,7 @@ bool SequencePlayer::setJointAnglesSequenceFullWithBSpline(short i_bsorder, shor
     for ( unsigned int i = 0; i < i_wrenches.length(); i++ ) v_wrenches.push_back(i_wrenches[i].get_buffer());
     for ( unsigned int i = 0; i < i_optionals.length(); i++ ) v_optionals.push_back(i_optionals[i].get_buffer());
     for ( unsigned int i = 0; i < i_tms.length();  i++ )  v_tms.push_back(i_tms[i]);
-    return m_seq->setJointAnglesSequenceFullWithBSpline(i_bsorder, i_bsid, i_bstmin, i_bstmax, v_bsp, v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
+    return m_seq->setJointAnglesSequenceFullWithBSpline(v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
 }
 
 bool SequencePlayer::setBasePos(const double *pos, double tm)
@@ -754,7 +759,7 @@ void SequencePlayer::loadPattern(const char *basename, double tm)
             if (!l) {
                 std::cerr << __PRETTY_FUNCTION__ << "can't find a fixed link("
                           << m_fixedLink << ")" << std::endl;
-                m_fixedLink = ""; 
+                m_fixedLink = "";
                 return;
             }
             m_robot->calcForwardKinematics(); // this is not called by setinitialstate()
@@ -768,13 +773,13 @@ void SequencePlayer::loadPattern(const char *basename, double tm)
             if (!ifspos.is_open() || !ifswst.is_open()){
                 std::cerr << __PRETTY_FUNCTION__ << "can't open " << pos << " or "
                           << wst << ")" << std::endl;
-                m_fixedLink = ""; 
+                m_fixedLink = "";
                 return;
             }
             double time;
             ifspos >> time;
             for (int i=0; i<m_robot->numJoints(); i++){
-                ifspos >> m_robot->joint(i)->q; 
+                ifspos >> m_robot->joint(i)->q;
             }
             ifswst >> time;
             for (int i=0; i<3; i++) ifswst >> m_robot->rootLink()->p[i];

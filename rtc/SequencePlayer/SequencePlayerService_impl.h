@@ -21,7 +21,7 @@ public:
   CORBA::Boolean setJointAnglesSequence(const dSequenceSequence& jvs, const dSequence &tms);
   CORBA::Boolean setJointAnglesSequenceWithMask(const dSequenceSequence& jvs, const bSequence& mask, const dSequence &tms);
   CORBA::Boolean setJointAnglesSequenceFull(const dSequenceSequence& jvss, const dSequenceSequence& vels, const dSequenceSequence& torques, const dSequenceSequence& poss, const dSequenceSequence& rpys, const dSequenceSequence& accs, const dSequenceSequence& zmps, const dSequenceSequence& wrenches, const dSequenceSequence& optionals, const dSequence &tms);
-  CORBA::Boolean setJointAnglesSequenceFullWithBSpline(CORBA::Short bsorder, CORBA::Short bsid, CORBA::Double bstmin, CORBA::Double bstmax, const dSequence& bsp, const dSequenceSequence& jvss, const dSequenceSequence& vels, const dSequenceSequence& torques, const dSequenceSequence& poss, const dSequenceSequence& rpys, const dSequenceSequence& accs, const dSequenceSequence& zmps, const dSequenceSequence& wrenches, const dSequenceSequence& optionals, const dSequence &tms);
+  CORBA::Boolean setJointAnglesSequenceFullWithBSpline(CORBA::Short bsorder, CORBA::Short bsid, CORBA::Double bstmin, CORBA::Double bsthit, CORBA::Double bstmax, const dSequence& bsp, const dSequenceSequence& jvss, const dSequenceSequence& vels, const dSequenceSequence& torques, const dSequenceSequence& poss, const dSequenceSequence& rpys, const dSequenceSequence& accs, const dSequenceSequence& zmps, const dSequenceSequence& wrenches, const dSequenceSequence& optionals, const dSequence &tms);
   CORBA::Boolean clearJointAngles();
   CORBA::Boolean setJointAngles(const dSequence& jvs, CORBA::Double tm);
   CORBA::Boolean setJointAnglesWithMask(const dSequence& jvs, const bSequence& mask, CORBA::Double tm);

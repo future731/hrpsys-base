@@ -107,7 +107,7 @@ class SequencePlayer
   bool setJointAngles(const double *angles, const bool *mask, double tm);
   bool setJointAnglesSequence(const OpenHRP::dSequenceSequence angless, const OpenHRP::bSequence& mask, const OpenHRP::dSequence& times);
   bool setJointAnglesSequenceFull(const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms);
-  bool setJointAnglesSequenceFullWithBSpline(short i_bsorder, short i_bsid, double i_bstmin, double i_bstmax, const OpenHRP::dSequence i_bsp, const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms);
+  bool setJointAnglesSequenceFullWithBSpline(short i_bsorder, short i_bsid, double i_bstmin, double i_bsthit, double i_bstmax, const OpenHRP::dSequence i_bsp, const OpenHRP::dSequenceSequence i_jvss, const OpenHRP::dSequenceSequence i_vels, const OpenHRP::dSequenceSequence i_torques, const OpenHRP::dSequenceSequence i_poss, const OpenHRP::dSequenceSequence i_rpys, const OpenHRP::dSequenceSequence i_accs, const OpenHRP::dSequenceSequence i_zmps, const OpenHRP::dSequenceSequence i_wrenches, const OpenHRP::dSequenceSequence i_optionals, const dSequence i_tms);
   bool clearJointAngles();
   bool setBasePos(const double *pos, double tm);
   bool setBaseRpy(const double *rpy, double tm);
@@ -201,12 +201,11 @@ class SequencePlayer
   hrp::Vector3 m_offsetP, m_fixedP;
   hrp::Matrix33 m_offsetR, m_fixedR;
   double m_timeToStartPlaying;
-  hrp::dvector m_dr;
   double m_tCurrent;
   double m_tHit;
   std::vector<BSpline::BSpline> m_bsplines;
   hrp::dvector m_p;
-  hrp::dvector m_target;
+  hrp::dvector m_target; // 6dof so far
   int dummy;
 };
 

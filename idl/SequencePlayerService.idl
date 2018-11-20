@@ -258,7 +258,7 @@ module OpenHRP
      * @param tms sequence of duration [s]
      * @return true joint angles are set successfully, false otherwise
      */
-    boolean setJointAnglesSequenceFullWithBSpline(in short bsorder, in short bsid, in double bstmin, in double bstmax, in dSequence bsp, in dSequenceSequence jvss, in dSequenceSequence vels,  in dSequenceSequence torques, in dSequenceSequence poss, in dSequenceSequence rpys, in dSequenceSequence accs, in dSequenceSequence zmps, in dSequenceSequence wrenchs, in dSequenceSequence optionals, in dSequence tms);
+    boolean setJointAnglesSequenceFullWithBSpline(in short bsorder, in short bsid, in double bstmin, in double bsthit, in double bstmax, in dSequence bsp, in dSequenceSequence jvss, in dSequenceSequence vels,  in dSequenceSequence torques, in dSequenceSequence poss, in dSequenceSequence rpys, in dSequenceSequence accs, in dSequenceSequence zmps, in dSequenceSequence wrenchs, in dSequenceSequence optionals, in dSequence tms);
 
     /**
      * @brief clear current JointAngles [>= 315.5.0]

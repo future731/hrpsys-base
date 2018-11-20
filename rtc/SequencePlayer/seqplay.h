@@ -40,8 +40,7 @@ public:
     bool setJointAnglesSequence(std::vector<const double*> pos, std::vector<double> tm);
     bool setJointAnglesSequenceOfGroup(const char *gname, std::vector<const double*> pos, std::vector<double> tm, const size_t pos_size);
     bool setJointAnglesSequenceFull(std::vector<const double*> pos, std::vector<const double*> vel, std::vector<const double*> torques, std::vector<const double*> bpos, std::vector<const double*> brpy, std::vector<const double*> bacc, std::vector<const double*> zmps, std::vector<const double*> wrenches, std::vector<const double*> optionals, std::vector<double> tm);
-    bool setJointAnglesSequenceFullWithBSpline(short bsorder, short bsid, double bstmin, double bstmax, std::vector<double> bsp, std::vector<const double*> pos, std::vector<const double*> vel, std::vector<const double*> torques, std::vector<const double*> bpos, std::vector<const double*> brpy, std::vector<const double*> bacc, std::vector<const double*> zmps, std::vector<const double*> wrenches, std::vector<const double*> optionals, std::vector<double> tm);
-    // bool setJointAnglesSequenceFullTest(std::vector<const double*> pos, std::vector<const double*> vel, std::vector<const double*> torques, std::vector<const double*> bpos, std::vector<const double*> brpy, std::vector<const double*> bacc, std::vector<const double*> zmps, std::vector<const double*> wrenches, std::vector<const double*> optionals, std::vector<double> tm);
+    bool setJointAnglesSequenceFullWithBSpline(std::vector<const double*> pos, std::vector<const double*> vel, std::vector<const double*> torques, std::vector<const double*> bpos, std::vector<const double*> brpy, std::vector<const double*> bacc, std::vector<const double*> zmps, std::vector<const double*> wrenches, std::vector<const double*> optionals, std::vector<double> tm);
     bool clearJointAngles();
     bool clearJointAnglesOfGroup(const char *gname);
     //

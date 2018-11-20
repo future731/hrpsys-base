@@ -182,7 +182,7 @@ CORBA::Boolean SequencePlayerService_impl::setJointAnglesSequenceFull(const dSeq
   return m_player->setJointAnglesSequenceFull(jvss, vels, torques, poss, rpys, accs, zmps, wrenches, optionals, tms);
 }
 
-CORBA::Boolean SequencePlayerService_impl::setJointAnglesSequenceFullWithBSpline(CORBA::Short bsorder, CORBA::Short bsid, CORBA::Double bstmin, CORBA::Double bstmax, const dSequence& bsp, const dSequenceSequence& jvss, const dSequenceSequence& vels, const dSequenceSequence& torques, const dSequenceSequence& poss, const dSequenceSequence& rpys, const dSequenceSequence& accs, const dSequenceSequence& zmps, const dSequenceSequence& wrenches, const dSequenceSequence& optionals, const dSequence &tms)
+CORBA::Boolean SequencePlayerService_impl::setJointAnglesSequenceFullWithBSpline(CORBA::Short bsorder, CORBA::Short bsid, CORBA::Double bstmin, CORBA::Double bsthit, CORBA::Double bstmax, const dSequence& bsp, const dSequenceSequence& jvss, const dSequenceSequence& vels, const dSequenceSequence& torques, const dSequenceSequence& poss, const dSequenceSequence& rpys, const dSequenceSequence& accs, const dSequenceSequence& zmps, const dSequenceSequence& wrenches, const dSequenceSequence& optionals, const dSequence &tms)
 {
   if (bsorder <= 0) {
       std::cerr << __PRETTY_FUNCTION__ << " bspline order is invalid:" << bsorder << " > 0" << std::endl;
@@ -192,6 +192,12 @@ CORBA::Boolean SequencePlayerService_impl::setJointAnglesSequenceFullWithBSpline
   }
   if (bstmin < 0.0) {
       std::cerr << __PRETTY_FUNCTION__ << " bspline starting time is invalid:" << bstmin << " < 0" << std::endl;
+  }
+  if (bstmin > bsthit) {
+      std::cerr << __PRETTY_FUNCTION__ << " bspline hitting time is invalid:" << bsthit << " < 0" << std::endl;
+  }
+  if (bstmax < bsthit) {
+      std::cerr << __PRETTY_FUNCTION__ << " bspline hitting time is invalid:" << bsthit << " < 0" << std::endl;
   }
   if (bstmin > bstmax) {
       std::cerr << __PRETTY_FUNCTION__ << " bspline ending time is invalid: start is" << bstmin << ", end is " << bstmax << std::endl;
@@ -301,7 +307,7 @@ CORBA::Boolean SequencePlayerService_impl::setJointAnglesSequenceFullWithBSpline
       //const dSequence& optional = optionasl[0];
   }
 
-  return m_player->setJointAnglesSequenceFullWithBSpline(bsorder, bsid, bstmin, bstmax, bsp, jvss, vels, torques, poss, rpys, accs, zmps, wrenches, optionals, tms);
+  return m_player->setJointAnglesSequenceFullWithBSpline(bsorder, bsid, bstmin, bsthit, bstmax, bsp, jvss, vels, torques, poss, rpys, accs, zmps, wrenches, optionals, tms);
 }
 
 CORBA::Boolean SequencePlayerService_impl::setJointAngle(const char *jname, CORBA::Double jv, CORBA::Double tm)
