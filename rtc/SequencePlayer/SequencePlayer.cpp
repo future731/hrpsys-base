@@ -62,6 +62,10 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_error_pos(0.0001),
       m_error_rot(0.001),
       m_iteration(50),
+      m_onlineModifyStarted(false),
+      m_timerToUseModification(0.0),
+      m_tMin(0.0),
+      m_tMax(std::numeric_limits<double>::max()),
       m_tCurrent(0.0),
       m_tHit(0.0),
       m_bsplines(std::vector<BSpline::BSpline>()),
@@ -255,22 +259,45 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         // calc current q from p
         /*
          * TODO
-         * m_bsplines
-         * m_p
-         * m_tCurrent
-         * m_tHit
+         * m_bsplines -- ok
+         * m_p -- ok
+         * m_tCurrent -- ok
+         * m_tHit -- ok
          * m_target
-         がvalidになるようにしておく
+         * がvalidになるようにしておく
+         * validでないときはループをスルーする
          */
-        this->onlineTrajectoryModification();
+        // ここでタイマーを更新する
+        bool is_target_valid = true;
+        if (m_onlineModifyStarted) {
+            m_timerToUseModification = dt;
+            if (is_target_valid) {
+                hrp::dvector dp = this->onlineTrajectoryModification();
+                m_p += dp;
+            }
+        }
+        // ここでm_pと現在時刻から
+
         double zmp[3], acc[3], pos[3], rpy[3], wrenches[6*m_wrenches.size()];
         m_seq->get(m_qRef.data.get_buffer(), zmp, acc, pos, rpy, m_tqRef.data.get_buffer(), wrenches, m_optionalData.data.get_buffer());
+
         m_zmpRef.data.x = zmp[0];
         m_zmpRef.data.y = zmp[1];
         m_zmpRef.data.z = zmp[2];
         m_accRef.data.ax = acc[0];
         m_accRef.data.ay = acc[1];
         m_accRef.data.az = acc[2];
+
+        if (m_onlineModifyStarted and m_tCurrent > m_tMax) {
+            m_onlineModifyStarted = false;
+        }
+        if (m_onlineModifyStarted) {
+            int id_max = m_bsplines.at(0).calcCoeffVector(m_tMin).size();
+            // overwrite for online trajectory modification
+            for (int i = 0; i < m_robot->numJoints(); i++) {
+                m_qRef.data.get_buffer()[i] = m_bsplines.at(i).calc(m_tCurrent, m_p.segment(id_max * i, id_max));
+            }
+        }
 
         if (m_fixedLink != ""){
             for (int i=0; i<m_robot->numJoints(); i++){
@@ -567,8 +594,14 @@ bool SequencePlayer::setJointAnglesSequenceFullWithBSpline(short i_bsorder, shor
 
     if (!setInitialState()) return false;
 
+    m_onlineModifyStarted = true;
+    m_tMin = i_bstmin;
+    m_tMax = i_bstmax;
     m_tCurrent = i_bstmin;
     m_tHit = i_bsthit;
+    // 初期化処理
+    m_timerToUseModification = 0.0;
+    m_bsplines.clear();
     for (int i = 0; i < i_bsid; i++) {
         m_bsplines.push_back(BSpline::BSpline(i_bsorder, i_bsorder, i_bsid, i_bsid, i_bstmin, i_bstmax));
     }
@@ -953,7 +986,6 @@ void SequencePlayer::setMaxIKIteration(short iter){
  * 返り値としてdp(m_pと同じ長さ)
  */
 hrp::dvector SequencePlayer::onlineTrajectoryModification(){
-    // Guard guard(m_mutex);
     const double epsilon = 1e-6;
     int online_modified_min_id = -1;
     // bsplineのサイズは1以上，その関節は動き始める前提?
