@@ -144,6 +144,9 @@ class SequencePlayer
   InPort<TimedOrientation3D> m_baseRpyInitIn;
   TimedPoint3D m_zmpRefInit;
   InPort<TimedPoint3D> m_zmpRefInitIn;
+#warning 6D?
+  TimedPoint3D m_hitTarget;
+  InPort<TimedPoint3D> m_hitTargetIn;
   
   // </rtc-template>
 
@@ -200,6 +203,7 @@ class SequencePlayer
   std::string m_fixedLink;
   hrp::Vector3 m_offsetP, m_fixedP;
   hrp::Matrix33 m_offsetR, m_fixedR;
+  bool m_isTargetValid;
   bool m_onlineModifyStarted;
   double m_timerToUseModification;
   double m_timeToStartPlaying;

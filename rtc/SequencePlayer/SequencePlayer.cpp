@@ -48,6 +48,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_basePosInitIn("basePosInit", m_basePosInit),
       m_baseRpyInitIn("baseRpyInit", m_baseRpyInit),
       m_zmpRefInitIn("zmpRefInit", m_zmpRefInit),
+      m_hitTargetIn("hitTarget", m_hitTarget),
       m_qRefOut("qRef", m_qRef),
       m_tqRefOut("tqRef", m_tqRef),
       m_zmpRefOut("zmpRef", m_zmpRef),
@@ -62,6 +63,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_error_pos(0.0001),
       m_error_rot(0.001),
       m_iteration(50),
+      m_isTargetValid(false),
       m_onlineModifyStarted(false),
       m_timerToUseModification(0.0),
       m_tMin(0.0),
@@ -239,6 +241,15 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
     if (m_basePosInitIn.isNew()) m_basePosInitIn.read();
     if (m_baseRpyInitIn.isNew()) m_baseRpyInitIn.read();
     if (m_zmpRefInitIn.isNew()) m_zmpRefInitIn.read();
+    if (m_hitTargetIn.isNew()) {
+        m_hitTargetIn.read();
+        m_target[0] = m_hitTarget.x;
+        m_target[1] = m_hitTarget.y;
+        m_target[2] = m_hitTarget.z;
+        m_isTargetValid = true;
+    } else {
+        m_isTargetValid = false;
+    }
 
     if (m_gname != "" && m_seq->isEmpty(m_gname.c_str())){
         if (m_waitFlag){
@@ -268,10 +279,9 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
          * validでないときはループをスルーする
          */
         // ここでタイマーを更新する
-        bool is_target_valid = true;
         if (m_onlineModifyStarted) {
             m_timerToUseModification = dt;
-            if (is_target_valid) {
+            if (m_isTargetValid) {
                 hrp::dvector dp = this->onlineTrajectoryModification();
                 m_p += dp;
             }
