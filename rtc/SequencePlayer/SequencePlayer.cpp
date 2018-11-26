@@ -48,7 +48,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_basePosInitIn("basePosInit", m_basePosInit),
       m_baseRpyInitIn("baseRpyInit", m_baseRpyInit),
       m_zmpRefInitIn("zmpRefInit", m_zmpRefInit),
-      m_hitTargetIn("hitTarget", m_hitTarget),
+      m_hitTargetIn("hitTargetIn", m_hitTarget),
       m_qRefOut("qRef", m_qRef),
       m_tqRefOut("tqRef", m_tqRef),
       m_zmpRefOut("zmpRef", m_zmpRef),
@@ -243,9 +243,9 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
     if (m_zmpRefInitIn.isNew()) m_zmpRefInitIn.read();
     if (m_hitTargetIn.isNew()) {
         m_hitTargetIn.read();
-        m_target[0] = m_hitTarget.x;
-        m_target[1] = m_hitTarget.y;
-        m_target[2] = m_hitTarget.z;
+        m_target[0] = m_hitTarget.data.x;
+        m_target[1] = m_hitTarget.data.y;
+        m_target[2] = m_hitTarget.data.z;
         m_isTargetValid = true;
     } else {
         m_isTargetValid = false;
