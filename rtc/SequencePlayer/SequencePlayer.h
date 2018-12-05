@@ -203,9 +203,10 @@ class SequencePlayer
   std::string m_fixedLink;
   hrp::Vector3 m_offsetP, m_fixedP;
   hrp::Matrix33 m_offsetR, m_fixedR;
+
+  int m_bsplines_length;
   bool m_isTargetValid;
   bool m_onlineModifyStarted;
-  double m_timerToUseModification;
   double m_timeToStartPlaying;
   double m_tMin;
   double m_tMax;

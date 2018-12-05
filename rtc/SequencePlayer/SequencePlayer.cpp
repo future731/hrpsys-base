@@ -65,7 +65,6 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_iteration(50),
       m_isTargetValid(false),
       m_onlineModifyStarted(false),
-      m_timerToUseModification(0.0),
       m_tMin(0.0),
       m_tMax(std::numeric_limits<double>::max()),
       m_tCurrent(0.0),
@@ -143,6 +142,9 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
     }
 
     unsigned int dof = m_robot->numJoints();
+
+    // dof + rootlink 6 dof - thk hand 2 * 2
+    m_bsplines_length = dof + 6 - 4;
 
 
     // Setting for wrench data ports (real + virtual)
@@ -246,6 +248,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         m_target[0] = m_hitTarget.data.x;
         m_target[1] = m_hitTarget.data.y;
         m_target[2] = m_hitTarget.data.z;
+#warning TODO ターゲットが正しいか判定 フィルタかけるかも
         m_isTargetValid = true;
     } else {
         m_isTargetValid = false;
@@ -279,15 +282,16 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
          * validでないときはループをスルーする
          */
         // ここでタイマーを更新する
+#warning コメントアウト
         if (m_onlineModifyStarted) {
-            m_timerToUseModification = dt;
+            m_tCurrent += dt;
             if (m_isTargetValid) {
+                /*
                 hrp::dvector dp = this->onlineTrajectoryModification();
                 m_p += dp;
+                */
             }
         }
-        // ここでm_pと現在時刻から
-
         double zmp[3], acc[3], pos[3], rpy[3], wrenches[6*m_wrenches.size()];
         m_seq->get(m_qRef.data.get_buffer(), zmp, acc, pos, rpy, m_tqRef.data.get_buffer(), wrenches, m_optionalData.data.get_buffer());
 
@@ -301,14 +305,65 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         if (m_onlineModifyStarted and m_tCurrent > m_tMax) {
             m_onlineModifyStarted = false;
         }
+#warning delete this when stable
+        /*
+        static bool init = false;
+        if (m_onlineModifyStarted) {
+            if (not init) {
+                init = true;
+                std::ofstream ofs_hrpsys_p("/home/future731/hrpsys_p_orig.txt");
+                int id_max = m_bsplines.at(0).calcCoeffVector(m_tMin).size();
+                for (int i = 0; i < m_bsplines_length - 6; i++) {
+                    for (int j = 0; j < id_max; j++) {
+                        ofs_hrpsys_p << m_p.segment(id_max * i, id_max)[j] << " ";
+                    }
+                }
+                ofs_hrpsys_p << std::endl;
+            }
+        }
+        static std::ofstream ofs_hrpsys_bspline("/home/future731/hrpsys_bsp.txt");
+        static std::ofstream ofs_hrpsys_jpos("/home/future731/hrpsys_jpos.txt");
+        */
         if (m_onlineModifyStarted) {
             int id_max = m_bsplines.at(0).calcCoeffVector(m_tMin).size();
             // overwrite for online trajectory modification
-            for (int i = 0; i < m_robot->numJoints(); i++) {
-                m_qRef.data.get_buffer()[i] = m_bsplines.at(i).calc(m_tCurrent, m_p.segment(id_max * i, id_max));
+            // m_qRef.data.length() is 37(numJoints(=33) + THKhand(2*2))
+            // m_bsplines.size() is 39(numJoints(=33) + rootlink)
+            // rarm only (because original jpos is calculated with both feet ik onto the ground)
+            std::vector<int> indices;
+            indices.clear();
+            std::string gname("RARM");
+            if (! m_seq->getJointGroup(gname.c_str(), indices)) {
+                std::cerr << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
             }
+            for (int i = indices.at(0); i <= indices.at(indices.size() - 1); i++) {
+                // m_qRef.data[i] = m_bsplines.at(i).calc(m_tCurrent, m_p.segment(id_max * i, id_max));
+            }
+#warning delete this when stable
+            /*
+            ofs_hrpsys_bspline << m_tCurrent << " ";
+            for (int i = 0; i < m_bsplines_length - 6; i++) {
+                ofs_hrpsys_bspline << m_bsplines.at(i).calc(m_tCurrent, m_p.segment(id_max * i, id_max)) << " ";
+            }
+            if (std::abs(m_tCurrent - 1.2) < 0.001) {
+                static bool print = true;
+                if (print) {
+                    std::cerr << m_tCurrent << " " << m_bsplines.at(0).calc(m_tCurrent, m_p.segment(id_max * 0, id_max)) << std::endl;
+                    print = false;
+                }
+            }
+
+            ofs_hrpsys_bspline << std::endl;
+            ofs_hrpsys_jpos << m_tCurrent << " ";
+            for (int i = 0; i < m_bsplines_length - 6; i++) {
+                ofs_hrpsys_jpos << m_qRef.data[i] << " ";
+            }
+            ofs_hrpsys_jpos << std::endl;
+            */
+
         }
 
+#warning TODO rootlink 6 dofを代入
         if (m_fixedLink != ""){
             for (int i=0; i<m_robot->numJoints(); i++){
                 m_robot->joint(i)->q = m_qRef.data[i];
@@ -339,6 +394,19 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             rpy[0] = rootRpy[0];
             rpy[1] = rootRpy[1];
             rpy[2] = rootRpy[2];
+#warning ここの値の順番が正しいか，またdegなのかradなのか調べる
+            if (m_onlineModifyStarted) {
+                int id_max = m_bsplines.at(0).calcCoeffVector(m_tMin).size();
+                std::cerr << "pos and attitude: " << pos[0] << " " << pos[1] << " " << pos[2] << " " << rpy[0] << " " << rpy[1] << " " << rpy[2] << std::endl;
+                int joint_num_without_thk = m_robot->numJoints() - 4;
+                pos[0] = m_bsplines.at(joint_num_without_thk + 0).calc(m_tCurrent, m_p.segment(id_max * (joint_num_without_thk + 0), id_max));
+                pos[1] = m_bsplines.at(joint_num_without_thk + 1).calc(m_tCurrent, m_p.segment(id_max * (joint_num_without_thk + 1), id_max));
+                pos[2] = m_bsplines.at(joint_num_without_thk + 2).calc(m_tCurrent, m_p.segment(id_max * (joint_num_without_thk + 2), id_max));
+#warning in euslisp data alignment is ypr
+                rpy[0] = m_bsplines.at(joint_num_without_thk + 3).calc(m_tCurrent, m_p.segment(id_max * (joint_num_without_thk + 3), id_max));
+                rpy[1] = m_bsplines.at(joint_num_without_thk + 4).calc(m_tCurrent, m_p.segment(id_max * (joint_num_without_thk + 4), id_max));
+                rpy[2] = m_bsplines.at(joint_num_without_thk + 5).calc(m_tCurrent, m_p.segment(id_max * (joint_num_without_thk + 5), id_max));
+            }
         }
         m_basePos.data.x = pos[0];
         m_basePos.data.y = pos[1];
@@ -610,15 +678,15 @@ bool SequencePlayer::setJointAnglesSequenceFullWithBSpline(short i_bsorder, shor
     m_tCurrent = i_bstmin;
     m_tHit = i_bsthit;
     // 初期化処理
-    m_timerToUseModification = 0.0;
     m_bsplines.clear();
-    for (int i = 0; i < i_bsid; i++) {
+    for (int i = 0; i < m_bsplines_length; i++) {
         m_bsplines.push_back(BSpline::BSpline(i_bsorder, i_bsorder, i_bsid, i_bsid, i_bstmin, i_bstmax));
     }
 
     int len = i_jvss.length();
     std::vector<const double*> v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals;
     std::vector<double> v_tms;
+    m_p = hrp::dvector::Zero(i_bsp.length());
     for ( unsigned int i = 0; i < i_bsp.length(); i++ ) m_p[i] = i_bsp[i];
     for ( unsigned int i = 0; i < i_jvss.length(); i++ ) v_jvss.push_back(i_jvss[i].get_buffer());
     for ( unsigned int i = 0; i < i_vels.length(); i++ ) v_vels.push_back(i_vels[i].get_buffer());
@@ -982,7 +1050,7 @@ void SequencePlayer::setMaxIKIteration(short iter){
     m_iteration= iter;
 }
 
-/*
+/*．
  * @brief BSpline関数で示された各関節軌道をオンライン調整する関数
  * @param 関節角をまとめた配列
  * @note この関数を呼ぶ際は上位の関節角指定を必ず書き換え続けなければならない．
@@ -996,6 +1064,7 @@ void SequencePlayer::setMaxIKIteration(short iter){
  * 返り値としてdp(m_pと同じ長さ)
  */
 hrp::dvector SequencePlayer::onlineTrajectoryModification(){
+    std::cerr << "onlineTrajectoryModification: " << __LINE__ << std::endl;
     const double epsilon = 1e-6;
     int online_modified_min_id = -1;
     // bsplineのサイズは1以上，その関節は動き始める前提?
@@ -1022,8 +1091,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // RARM_LINK0, 1, 2, 3, 4, 5, 6, 7
     std::vector<int> indices;
     indices.clear();
-    const char* gname = "RARM";
-    if (! m_seq->getJointGroup(gname, indices)) {
+    std::string gname = "RARM";
+    if (! m_seq->getJointGroup(gname.c_str(), indices)) {
         std::cerr << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
         return hrp::dvector::Zero(m_p.size()); // id_max * ((length jlist) + 6) + 1(m_tHit)
     }
@@ -1048,18 +1117,20 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     }
     // current_pose: current_pose_fullのうち補正する関節のみのangle-vector
     hrp::dvector current_pose = current_pose_full.segment(online_modified_min_id, k);
-    for (int i=0; i<m_robot->numJoints(); i++){
+#warning THKハンド
+    for (int i=0; i<m_robot->numJoints() - 4; i++){
         m_robot->joint(i)->q = current_pose_full[i];
     }
-    for (int i=m_robot->numJoints(); i<m_robot->numJoints()+3; i++){
+#warning THKハンド
+    for (int i=m_robot->numJoints() - 4; i<m_robot->numJoints()-4+3; i++){
         m_robot->rootLink()->p[i] = current_pose_full[i];
     }
 #warning in euslisp data alignment is ypr
 
     m_robot->rootLink()->R = hrp::rotFromRpy(
-            current_pose_full(m_robot->numJoints()+2),
-            current_pose_full(m_robot->numJoints()+1),
-            current_pose_full(m_robot->numJoints()+0));
+            current_pose_full(m_robot->numJoints()-4+2),
+            current_pose_full(m_robot->numJoints()-4+1),
+            current_pose_full(m_robot->numJoints()-4+0));
     // 後でdqを求めるため，ikを解く必要があり，その準備として今FKを解いておく
     m_robot->calcForwardKinematics();
 
@@ -1169,6 +1240,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     for (size_t i = 0; i < m_bsplines.size(); i++) {
         dp.segment(i * id_max, k) = dp_modified.segment(i * k, k);
     }
+    std::cerr << "onlineTrajectoryModification: " << __LINE__ << std::endl;
     return dp;
 }
 
