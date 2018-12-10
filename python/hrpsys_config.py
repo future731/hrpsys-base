@@ -356,8 +356,6 @@ class HrpsysConfigurator(object):
             elif self.te:
                 connectPorts(self.rh.port("servoState"),
                              self.te.port("servoStateIn"))
-        # connection for seq input
-        connectPorts(self.seq.port("hitTargetOut"), self.seq.port("hitTargetIn"))
 
         # connection for sh, seq, fk
         connectPorts(self.rh.port("q"), [self.sh.port("currentQIn"),
