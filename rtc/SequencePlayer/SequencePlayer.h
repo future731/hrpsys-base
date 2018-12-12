@@ -204,7 +204,12 @@ class SequencePlayer
   hrp::Vector3 m_offsetP, m_fixedP;
   hrp::Matrix33 m_offsetR, m_fixedR;
 
+  hrp::Vector3 m_p_rarm_to_end_effector;
+  hrp::Matrix33 m_R_rarm_to_end_effector;
+
   int m_bsplines_length;
+  int m_id_max;
+  hrp::dvector m_rootlink_6dof_offset; // just a patch; 本来はEuslisp上でBSplineの値をrootlinkの座標にするのが正しい
   bool m_isTargetValid;
   bool m_onlineModifyStarted;
   double m_timeToStartPlaying;
