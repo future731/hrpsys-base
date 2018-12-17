@@ -293,14 +293,9 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         // (rpy-angle (send *sweet-spot* :worldrot))
         // -> ((-0.618137 -1.13771 -0.90624) (2.52346 -2.00389 2.23535))
 
-        m_target[0] = 1.09166;
-        m_target[1] = 0.341605;
-        m_target[2] = 0.624728;
-        /*
         m_target[0] = m_hitTarget.data.x;
         m_target[1] = m_hitTarget.data.y;
         m_target[2] = m_hitTarget.data.z;
-        */
         // euslisp alignment is ypr
         m_target[3] = -0.90624;
         m_target[4] = -1.13771;
@@ -344,6 +339,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             m_tCurrent += dt;
             if (m_isTargetValid) {
                 hrp::dvector dp = this->onlineTrajectoryModification();
+                /*
                 std::cerr << "dp: " << std::endl;
                 for (int i = 0; i < m_bsplines_length; i++) {
                     for (int j = 0; j < m_id_max; j++) {
@@ -351,6 +347,8 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                     }
                     std::cerr << std::endl;
                 }
+                std::cerr << dp[dp.size() - 1] << std::endl;
+                */
                 m_p += dp;
             } else {
                 std::cerr << "target is not valid" << std::endl;
@@ -1269,6 +1267,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     std::cerr << " p_ground_to_end_effector: " << p_ground_to_end_effector.transpose() << std::endl;
     std::cerr << " R_ground_to_end_effector: " << std::endl;
     std::cerr << R_ground_to_end_effector << std::endl;
+    */
     std::cerr << " p_ground_to_rarm: " << p_ground_to_rarm.transpose() << std::endl;
     std::cerr << " R_ground_to_rarm: " << std::endl;
     std::cerr << R_ground_to_rarm << std::endl;
@@ -1276,7 +1275,6 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     std::cerr << " m_robot->link(target_name)->p: " << m_robot->link(target_name)->p.transpose() << std::endl;
     std::cerr << " m_robot->link(target_name)->R: " << std::endl;
     std::cerr << m_robot->link(target_name)->R << std::endl;
-    */
 
     manip->setMaxIKError(m_error_pos,m_error_rot);
 #warning 決め打ち IKIteration
