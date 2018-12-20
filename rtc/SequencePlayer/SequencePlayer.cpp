@@ -1217,8 +1217,9 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::Vector3 p_ground_to_rarm_expected = m_robot->link(target_name)->p;
     hrp::Matrix33 R_ground_to_end_effector_expected = R_ground_to_rarm_expected * m_R_rarm_to_end_effector;
     hrp::Vector3 p_ground_to_end_effector_expected = R_ground_to_rarm_expected * m_p_rarm_to_end_effector + p_ground_to_rarm_expected;
-
-    // hrp::Matrix33 R_ground_to_racket_expected = R_ground_to_end_effector_expected * R_end_effector_to_racket;
+    ///*
+    hrp::Matrix33 R_ground_to_racket_expected = R_ground_to_end_effector_expected * R_end_effector_to_racket;
+    //*/
     hrp::Vector3 p_ground_to_racket_expected = R_ground_to_end_effector_expected * p_end_effector_to_racket + p_ground_to_end_effector_expected;
 
     // (progn (pose3) (send *sweet-spot* :worldpos))
@@ -1238,11 +1239,19 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     double hit_pos_x = k_hit * px;
     double hit_pos_y = k_hit * py;
     double ttc = (hit_pos_x - x) / vx;
+    /*
     std::cerr << "x: " << x << " vx: " << vx <<  " y: " << y << " vy: " << vy << std::endl;
     std::cerr << "expected ee pos: " << p_ground_to_end_effector_expected.transpose() << std::endl;
-    std::cerr << "expected racket pos px, py, pz: " << p_ground_to_racket_expected.transpose() << std::endl;
+    */
+    std::cerr << "expected ground_to_racket pos px, py, pz: " << p_ground_to_racket_expected.transpose() << std::endl;
+    std::cerr << "expected ground_to_racket rotation: " << std::endl;
+    std::cerr << R_ground_to_racket_expected << std::endl;
+    std::cerr << "expected ground_to_racket rpy: " << std::endl;
+    std::cerr << rpyFromRot(R_ground_to_racket_expected) << std::endl;
+    /*
     std::cerr << "k hit is: " << k_hit << std::endl;
     std::cerr << "ttc is: " << ttc << std::endl;
+    */
     double sqsum = 0.0;
     for (int i = 0; i < var.length(); i++) {
         sqsum += var[i] * var[i];
@@ -1252,14 +1261,14 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     //m_target[1] = y + vy * ttc;
     //m_target[2] = z + vz * ttc - 9.8 / 2 * ttc * ttc;
     m_target[0] = 1.16611;
-    m_target[1] = -0.100694;
+    m_target[1] = 0.100694;
     m_target[2] = 0.81983;
     //m_target[3] = -0.90624;
     //m_target[4] = -1.13771;
     //m_target[5] = -0.618137;
-    m_target[3] = 1.1596777;
-    m_target[4] = 0.0368983;
-    m_target[5] = -0.802369;
+    m_target[3] = -0.585105;
+    m_target[4] = -0.978499;
+    m_target[5] = -1.12223;
     std::cerr << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
     if (sqsum > 36.0 or ttc > m_tHit) {
