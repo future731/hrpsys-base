@@ -2,12 +2,20 @@
  * @file SequencePlayerService.idl
  * @brief Services for the sequence player interface
  */
+#include <ExtendedDataTypes.idl>
 module OpenHRP
 {
   typedef sequence<double> dSequence;
   typedef sequence<dSequence> dSequenceSequence;
   typedef sequence<boolean> bSequence;
-  
+  struct TimedPosAndVelWithCovariance
+  {
+    RTC::Time tm;
+    RTC::Point3D point;
+    RTC::Velocity3D velocity;
+    dSequence pos_and_vel_covariance;
+  };
+
   interface SequencePlayerService
   {
     typedef sequence<string> StrSequence;
@@ -240,6 +248,7 @@ module OpenHRP
      */
     boolean setJointAnglesSequenceFull(in dSequenceSequence jvss, in dSequenceSequence vels,  in dSequenceSequence torques, in dSequenceSequence poss, in dSequenceSequence rpys, in dSequenceSequence accs, in dSequenceSequence zmps, in dSequenceSequence wrenchs, in dSequenceSequence optionals, in dSequence tms);
 
+
     /**
      * @brief With bspline joint angle orbit, interpolate all joint angles, using duration specified by \em tm. Returns without waiting for whole sequence to be sent to robot. If this function called during the robot moves, it overwrite current goal.  [>= 315.5.0]
      * @param bsorder bspline recursive order []
@@ -259,6 +268,7 @@ module OpenHRP
      * @return true joint angles are set successfully, false otherwise
      */
     boolean setJointAnglesSequenceFullWithBSpline(in short bsorder, in short bsid, in double bstmin, in double bsthit, in double bstmax, in dSequence bsp, in dSequenceSequence jvss, in dSequenceSequence vels,  in dSequenceSequence torques, in dSequenceSequence poss, in dSequenceSequence rpys, in dSequenceSequence accs, in dSequenceSequence zmps, in dSequenceSequence wrenchs, in dSequenceSequence optionals, in dSequence tms);
+
 
     /**
      * @brief clear current JointAngles [>= 315.5.0]

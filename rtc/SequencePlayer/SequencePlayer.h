@@ -144,9 +144,8 @@ class SequencePlayer
   InPort<TimedOrientation3D> m_baseRpyInitIn;
   TimedPoint3D m_zmpRefInit;
   InPort<TimedPoint3D> m_zmpRefInitIn;
-#warning 6D?
-  TimedPoint3D m_hitTarget;
-  InPort<TimedPoint3D> m_hitTargetIn;
+  OpenHRP::TimedPosAndVelWithCovariance m_hitTarget;
+  InPort<OpenHRP::TimedPosAndVelWithCovariance> m_hitTargetIn;
   
   // </rtc-template>
 

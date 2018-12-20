@@ -16,6 +16,7 @@
 #include <hrpModel/JointPath.h>
 #include <hrpUtil/MatrixSolvers.h>
 #include "../ImpedanceController/JointPathEx.h"
+#include "hrpsys/idl/SequencePlayerService.hh"
 
 typedef coil::Guard<coil::Mutex> Guard;
 
@@ -64,7 +65,6 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_error_rot(0.001),
       m_iteration(50),
       m_rootlink_6dof_offset(hrp::dvector::Zero(6)),
-      m_isTargetValid(false),
       m_onlineModifyStarted(false),
       m_id_max(0),
       m_tMin(0.0),
@@ -288,20 +288,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
     if (m_zmpRefInitIn.isNew()) m_zmpRefInitIn.read();
     if (m_hitTargetIn.isNew()) {
         m_hitTargetIn.read();
-        // (progn (pose3) (send *sweet-spot* :worldpos))
-        // -> #f(1091.66 341.605 624.728)
-        // (rpy-angle (send *sweet-spot* :worldrot))
-        // -> ((-0.618137 -1.13771 -0.90624) (2.52346 -2.00389 2.23535))
-
-        m_target[0] = m_hitTarget.data.x;
-        m_target[1] = m_hitTarget.data.y;
-        m_target[2] = m_hitTarget.data.z;
-        // euslisp alignment is ypr
-        m_target[3] = -0.90624;
-        m_target[4] = -1.13771;
-        m_target[5] = -0.618137;
-        std::cerr << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
-#warning TODO ターゲットが正しいか判定 フィルタかけるかも
         m_isTargetValid = true;
     } else {
         m_isTargetValid = false;
@@ -1123,6 +1109,7 @@ void SequencePlayer::setMaxIKIteration(short iter){
  * 返り値としてdp(m_pと同じ長さ)
  */
 hrp::dvector SequencePlayer::onlineTrajectoryModification(){
+#warning TODO ターゲットが正しいか判定 フィルタかけるかも
     const double epsilon = 1e-6;
     // bsplineのサイズは1以上，その関節は動き始める前提?
     BSpline::BSpline bspline = m_bsplines.at(0);
@@ -1207,6 +1194,77 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     */
     // 後でdqを求めるため，ikを解く必要があり，その準備として今FKを解いておく
     m_robot->calcForwardKinematics();
+    // ラケットの位置を求める
+    string base_parent_name = m_robot->joint(indices.at(0))->parent->name;
+    string target_name = m_robot->joint(indices.at(indices.size()-1))->name;
+    // prepare joint path
+    hrp::JointPathExPtr manip = hrp::JointPathExPtr(new hrp::JointPathEx(m_robot, m_robot->link(base_parent_name), m_robot->link(target_name), dt, true, std::string(m_profile.instance_name)));
+    hrp::Vector3 p_racket_to_end_effector;
+    p_racket_to_end_effector[0] = 0.0;
+    p_racket_to_end_effector[1] = -0.470;
+    p_racket_to_end_effector[2] = 0.0;
+    hrp::Vector3 rpy_racket_to_end_effector;
+    rpy_racket_to_end_effector[0] = 2.186;
+    rpy_racket_to_end_effector[1] = -0.524;
+    rpy_racket_to_end_effector[2] = 2.186;
+    hrp::Matrix33 R_racket_to_end_effector = rotFromRpy(rpy_racket_to_end_effector[0], rpy_racket_to_end_effector[1], rpy_racket_to_end_effector[2]);
+    hrp::Matrix33 R_end_effector_to_rarm = m_R_rarm_to_end_effector.transpose();
+    hrp::Vector3 p_end_effector_to_rarm = R_end_effector_to_rarm * -m_p_rarm_to_end_effector;
+    hrp::Matrix33 R_end_effector_to_racket = R_racket_to_end_effector.transpose();
+    hrp::Vector3 p_end_effector_to_racket = R_end_effector_to_racket * -p_racket_to_end_effector;
+
+    hrp::Matrix33 R_ground_to_rarm_expected = m_robot->link(target_name)->R;
+    hrp::Vector3 p_ground_to_rarm_expected = m_robot->link(target_name)->p;
+    hrp::Matrix33 R_ground_to_end_effector_expected = R_ground_to_rarm_expected * m_R_rarm_to_end_effector;
+    hrp::Vector3 p_ground_to_end_effector_expected = R_ground_to_rarm_expected * m_p_rarm_to_end_effector + p_ground_to_rarm_expected;
+
+    // hrp::Matrix33 R_ground_to_racket_expected = R_ground_to_end_effector_expected * R_end_effector_to_racket;
+    hrp::Vector3 p_ground_to_racket_expected = R_ground_to_end_effector_expected * p_end_effector_to_racket + p_ground_to_end_effector_expected;
+
+    // (progn (pose3) (send *sweet-spot* :worldpos))
+    // -> #f(1091.66 341.605 624.728)
+    // (rpy-angle (send *sweet-spot* :worldrot))
+    // -> ((-0.618137 -1.13771 -0.90624) (2.52346 -2.00389 2.23535))
+    double x = m_hitTarget.point.x;
+    double y = m_hitTarget.point.y;
+    double z = m_hitTarget.point.z;
+    double vx = m_hitTarget.velocity.vx;
+    double vy = m_hitTarget.velocity.vy;
+    double vz = m_hitTarget.velocity.vz;
+    double px = p_ground_to_racket_expected[0];
+    double py = p_ground_to_racket_expected[1];
+    OpenHRP::dSequence var = m_hitTarget.pos_and_vel_covariance;
+    double k_hit = (vy * x - vx * y) / (vy * px - vx * py);
+    double hit_pos_x = k_hit * px;
+    double hit_pos_y = k_hit * py;
+    double ttc = (hit_pos_x - x) / vx;
+    std::cerr << "x: " << x << " vx: " << vx <<  " y: " << y << " vy: " << vy << std::endl;
+    std::cerr << "expected ee pos: " << p_ground_to_end_effector_expected.transpose() << std::endl;
+    std::cerr << "expected racket pos px, py, pz: " << p_ground_to_racket_expected.transpose() << std::endl;
+    std::cerr << "k hit is: " << k_hit << std::endl;
+    std::cerr << "ttc is: " << ttc << std::endl;
+    double sqsum = 0.0;
+    for (int i = 0; i < var.length(); i++) {
+        sqsum += var[i] * var[i];
+    }
+
+    //m_target[0] = x + vx * ttc;
+    //m_target[1] = y + vy * ttc;
+    //m_target[2] = z + vz * ttc - 9.8 / 2 * ttc * ttc;
+    m_target[0] = 1.16611;
+    m_target[1] = -0.100694;
+    m_target[2] = 0.81983;
+    //m_target[3] = -0.90624;
+    //m_target[4] = -1.13771;
+    //m_target[5] = -0.618137;
+    m_target[3] = 1.1596777;
+    m_target[4] = 0.0368983;
+    m_target[5] = -0.802369;
+    std::cerr << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
+
+    if (sqsum > 36.0 or ttc > m_tHit) {
+        return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
+    }
 
     // dq
     // ラケット先端がm_target(6次元)にある想定
@@ -1221,29 +1279,13 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // その上でIKを解く
     // 関節角の差分を返す
     hrp::dvector dq = hrp::dvector::Zero(k);
-    string base_parent_name = m_robot->joint(indices.at(0))->parent->name;
-    string target_name = m_robot->joint(indices.at(indices.size()-1))->name;
-    // prepare joint path
-    hrp::JointPathExPtr manip = hrp::JointPathExPtr(new hrp::JointPathEx(m_robot, m_robot->link(base_parent_name), m_robot->link(target_name), dt, true, std::string(m_profile.instance_name)));
+
     // m_targetはラケット先端
     // gripperは無視
     // end_effectorはハンド
     // rarmはarmの先端リンク
     // m_targetを元にrarmの位置姿勢を計算
     // onInitializeに移行できるものはするとよい
-    hrp::Vector3 p_racket_to_end_effector;
-    p_racket_to_end_effector[0] = 0.0;
-    p_racket_to_end_effector[1] = -0.470;
-    p_racket_to_end_effector[2] = 0.0;
-    hrp::Vector3 rpy_racket_to_end_effector;
-    rpy_racket_to_end_effector[0] = 2.186;
-    rpy_racket_to_end_effector[1] = -0.524;
-    rpy_racket_to_end_effector[2] = 2.186;
-
-    hrp::Matrix33 R_end_effector_to_rarm = m_R_rarm_to_end_effector.transpose();
-    hrp::Vector3 p_end_effector_to_rarm = R_end_effector_to_rarm * -m_p_rarm_to_end_effector;
-
-    hrp::Matrix33 R_racket_to_end_effector = rotFromRpy(rpy_racket_to_end_effector[0], rpy_racket_to_end_effector[1], rpy_racket_to_end_effector[2]);
     // target(*sweet-spot*の位置)から計算されたground座標系におけるrarmの位置姿勢
     hrp::Vector3 p_ground_to_racket = m_target.segment(0, 3);
     hrp::Vector3 rpy_ground_to_racket = m_target.segment(3, 3);
@@ -1259,11 +1301,11 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::Vector3 p_ground_to_rarm = R_ground_to_racket * p_racket_to_rarm + p_ground_to_racket;
     hrp::Matrix33 R_ground_to_rarm = R_ground_to_racket * R_racket_to_end_effector * R_end_effector_to_rarm;
 
-    /*
     std::cerr << " m_target: " << m_target.segment(0, 6).transpose() << std::endl;
     std::cerr << " p_ground_to_racket: " << p_ground_to_racket.transpose() << std::endl;
     std::cerr << " R_ground_to_racket: " << std::endl;
     std::cerr << R_ground_to_racket << std::endl;
+    /*
     std::cerr << " p_ground_to_end_effector: " << p_ground_to_end_effector.transpose() << std::endl;
     std::cerr << " R_ground_to_end_effector: " << std::endl;
     std::cerr << R_ground_to_end_effector << std::endl;
@@ -1283,10 +1325,13 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     if (!ik_succeeded) {
         std::cerr << "[onlineTrajectoryModification] ik failed" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
+    } else {
+        std::cerr << "[onlineTrajectoryModification] ik succeeded" << std::endl;
     }
     for (int i = 0; i < k; i++) {
         dq[i] = m_robot->joint(indices.at(0) + i)->q - hit_pose[i];
     }
+    std::cerr << "dq is: " << dq.transpose() << std::endl;
 
     // dp_modifiedを計算
     hrp::dvector initial_state = hrp::dvector::Zero(c);
@@ -1305,7 +1350,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::dmatrix eval_weight_matrix = hrp::dmatrix::Zero(c, c);
     // 後ろの重みが大きいので，後ろに行けば行くほど修正量が小さくなるはず
     for (int i = 0; i < c; i++) {
-        eval_weight_matrix(i, i) = i + 1;
+        eval_weight_matrix(i, i) = 1 + i * 0.1;
     }
     hrp::dvector eval_coeff_vector = hrp::dvector::Zero(c);
     hrp::dvector dp_modified = hrp::dvector::Zero(k * c);
