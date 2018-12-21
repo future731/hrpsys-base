@@ -325,6 +325,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             m_tCurrent += dt;
             if (m_isTargetValid) {
                 hrp::dvector dp = this->onlineTrajectoryModification();
+                /*
                 std::cerr << "dp: " << std::endl;
                 for (int i = 0; i < m_bsplines_length; i++) {
                     for (int j = 0; j < m_id_max; j++) {
@@ -333,6 +334,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                     std::cerr << std::endl;
                 }
                 std::cerr << dp[dp.size() - 1] << std::endl;
+                */
                 m_p += dp;
             } else {
                 std::cerr << "target is not valid" << std::endl;
@@ -352,6 +354,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             m_onlineModifyStarted = false;
         }
 #warning delete this when stable
+        /*
         static bool init = false;
         if (m_onlineModifyStarted) {
             if (not init) {
@@ -367,6 +370,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         }
         static std::ofstream ofs_hrpsys_bspline("/home/future731/hrpsys_bsp.txt");
         static std::ofstream ofs_hrpsys_jpos("/home/future731/hrpsys_jpos.txt");
+        */
         if (m_onlineModifyStarted) {
             // overwrite for online trajectory modification
             // m_qRef.data.length() is 37(numJoints(=33) + THKhand(2*2))
@@ -382,6 +386,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                 m_qRef.data[i] = m_bsplines.at(i).calc(m_tCurrent, m_p.segment(m_id_max * i, m_id_max));
             }
 #warning delete this when stable
+            /*
             ofs_hrpsys_bspline << m_tCurrent << " ";
             for (int i = 0; i < m_bsplines_length - 6; i++) {
                 ofs_hrpsys_bspline << m_bsplines.at(i).calc(m_tCurrent, m_p.segment(m_id_max * i, m_id_max)) << " ";
@@ -394,6 +399,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                 ofs_hrpsys_jpos << m_qRef.data[i] << " ";
             }
             ofs_hrpsys_jpos << std::endl;
+            */
         }
 
         if (m_fixedLink != ""){
@@ -1348,12 +1354,9 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::dvector eval_coeff_vector = hrp::dvector::Zero(c);
     hrp::dvector dp_modified = hrp::dvector::Zero(k * c);
     for (int j_k_id = 0; j_k_id < k; j_k_id++) {
-        std::cerr << "debug j_k_id: " << j_k_id << std::endl;
-        std::cerr << "debug: " << __LINE__ << std::endl;
         // TODO state_min_vector, state_max_vectorを入れる
         hrp::dvector state_min_vector = hrp::dvector::Zero(c);
         hrp::dvector state_max_vector = hrp::dvector::Zero(c);
-        std::cerr << "debug: " << __LINE__ << std::endl;
         for (int i = 0; i < c; i++) {
             state_min_vector[i] = online_modified_jlist.at(j_k_id)->llimit;
         }
@@ -1377,34 +1380,37 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         }
         inequality_max_vector -= r;
 #warning ここconst参照的なものにできないか確かめる
-        std::cerr << "debug: " << __LINE__ << std::endl;
         hrp::dmatrix G = eval_weight_matrix;
         hrp::dvector g0 = eval_coeff_vector;
         hrp::dmatrix CE = equality_matrix;
         hrp::dvector ce0 = -equality_coeff; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
         hrp::dmatrix CI = hrp::dmatrix::Zero(2 * (m_id_max - 1) + 2 * c, c);
-        std::cerr << "debug: " << __LINE__ << std::endl;
         CI.block(0, 0, c, c) = hrp::dmatrix::Identity(c, c);
         CI.block(c, 0, c, c) = -hrp::dmatrix::Identity(c, c);
         CI.block(c * 2, 0, m_id_max - 1, c) = inequality_matrix;
         CI.block(c * 2 + m_id_max - 1, 0, m_id_max - 1, c) = -inequality_matrix;
         hrp::dvector ci0 = hrp::dvector::Zero(2 * (m_id_max - 1) + 2 * c);
 #warning changed
-        std::cerr << "debug: " << __LINE__ << std::endl;
         ci0.segment(0, c) = -state_min_vector;
         ci0.segment(c, c) = state_max_vector;
         ci0.segment(c * 2, m_id_max - 1) = -inequality_min_vector;
         ci0.segment(c * 2 + m_id_max - 1, m_id_max - 1) = inequality_max_vector;
-        std::cerr << "debug: " << __LINE__ << std::endl;
         hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
-        std::cerr << "debug: " << __LINE__ << std::endl;
+        /*
         std::cerr << "G" << G << std::endl;
         std::cerr << "g0" << g0 << std::endl;
         std::cerr << "CE" << CE << std::endl;
         std::cerr << "ce0" << ce0 << std::endl;
         std::cerr << "CI" << CI << std::endl;
         std::cerr << "ci0" << ci0 << std::endl;
-        double opt = Eigen::solve_quadprog(G, g0, CE, ce0, CI, ci0, tmp_dp_modified);
+        std::cerr << "G: " << G.rows() << "x" << G.cols() << std::endl;
+        std::cerr << "g0: " << g0.size() << std::endl;
+        std::cerr << "CE: " << CE.rows() << "x" << CE.cols() << std::endl;
+        std::cerr << "ce0: " << ce0.size() << std::endl;
+        std::cerr << "CI: " << CI.rows() << "x" << CI.cols() << std::endl;
+        std::cerr << "ci0: " << ci0.size() << std::endl;
+        */
+        double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
         std::cerr << "opt: " << opt << std::endl;
         if (std::isfinite(opt)) {
             dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
