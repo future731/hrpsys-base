@@ -325,7 +325,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             m_tCurrent += dt;
             if (m_isTargetValid) {
                 hrp::dvector dp = this->onlineTrajectoryModification();
-                /*
                 std::cerr << "dp: " << std::endl;
                 for (int i = 0; i < m_bsplines_length; i++) {
                     for (int j = 0; j < m_id_max; j++) {
@@ -334,7 +333,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                     std::cerr << std::endl;
                 }
                 std::cerr << dp[dp.size() - 1] << std::endl;
-                */
                 m_p += dp;
             } else {
                 std::cerr << "target is not valid" << std::endl;
@@ -354,7 +352,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             m_onlineModifyStarted = false;
         }
 #warning delete this when stable
-        /*
         static bool init = false;
         if (m_onlineModifyStarted) {
             if (not init) {
@@ -370,7 +367,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         }
         static std::ofstream ofs_hrpsys_bspline("/home/future731/hrpsys_bsp.txt");
         static std::ofstream ofs_hrpsys_jpos("/home/future731/hrpsys_jpos.txt");
-        */
         if (m_onlineModifyStarted) {
             // overwrite for online trajectory modification
             // m_qRef.data.length() is 37(numJoints(=33) + THKhand(2*2))
@@ -386,18 +382,11 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                 m_qRef.data[i] = m_bsplines.at(i).calc(m_tCurrent, m_p.segment(m_id_max * i, m_id_max));
             }
 #warning delete this when stable
-            /*
             ofs_hrpsys_bspline << m_tCurrent << " ";
             for (int i = 0; i < m_bsplines_length - 6; i++) {
                 ofs_hrpsys_bspline << m_bsplines.at(i).calc(m_tCurrent, m_p.segment(m_id_max * i, m_id_max)) << " ";
             }
-            if (std::abs(m_tCurrent - 1.2) < 0.001) {
-                static bool print = true;
-                if (print) {
-                    std::cerr << m_tCurrent << " " << m_bsplines.at(0).calc(m_tCurrent, m_p.segment(m_id_max * 0, m_id_max)) << std::endl;
-                    print = false;
-                }
-            }
+            std::cerr << "m_tCurrent: " <<  m_tCurrent << std::endl;
 
             ofs_hrpsys_bspline << std::endl;
             ofs_hrpsys_jpos << m_tCurrent << " ";
@@ -405,8 +394,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                 ofs_hrpsys_jpos << m_qRef.data[i] << " ";
             }
             ofs_hrpsys_jpos << std::endl;
-            */
-
         }
 
         if (m_fixedLink != ""){
@@ -448,9 +435,9 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             pos[1] = m_bsplines.at(joint_num_without_thk + 1).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 1), m_id_max)) + m_rootlink_6dof_offset[1];
             pos[2] = m_bsplines.at(joint_num_without_thk + 2).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 2), m_id_max)) + m_rootlink_6dof_offset[2];
 #warning in euslisp data alignment is ypr?
-            rpy[0] = m_bsplines.at(joint_num_without_thk + 3).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 3), m_id_max)) + m_rootlink_6dof_offset[5];
+            rpy[0] = m_bsplines.at(joint_num_without_thk + 5).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 5), m_id_max)) + m_rootlink_6dof_offset[5];
             rpy[1] = m_bsplines.at(joint_num_without_thk + 4).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 4), m_id_max)) + m_rootlink_6dof_offset[4];
-            rpy[2] = m_bsplines.at(joint_num_without_thk + 5).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 5), m_id_max)) + m_rootlink_6dof_offset[3];
+            rpy[2] = m_bsplines.at(joint_num_without_thk + 3).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 3), m_id_max)) + m_rootlink_6dof_offset[3];
         }
         m_basePos.data.x = pos[0];
         m_basePos.data.y = pos[1];
@@ -1110,7 +1097,7 @@ void SequencePlayer::setMaxIKIteration(short iter){
  */
 hrp::dvector SequencePlayer::onlineTrajectoryModification(){
 #warning TODO ターゲットが正しいか判定 フィルタかけるかも
-    const double epsilon = 1e-6;
+    const double epsilon = 1e-324;
     // bsplineのサイズは1以上，その関節は動き始める前提?
     BSpline::BSpline bspline = m_bsplines.at(0);
     hrp::dvector coeff_vector = bspline.calcCoeffVector(m_tCurrent);
@@ -1131,6 +1118,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     }
     // online_modified_max_id_1は実際のonline_modified_max_idより1大きい
     int c = online_modified_max_id_1 - online_modified_min_id;  // ここは+1する必要がない
+    std::cerr << "online_modified_min anx max+1 id: " << online_modified_min_id << " " << online_modified_max_id_1 << std::endl;
     // 腕だけik
     // online_modified_links ikを解く*limb*のlink(jointを持っている)のリスト
     // RARM_LINK0, 1, 2, 3, 4, 5, 6, 7
@@ -1242,13 +1230,11 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     /*
     std::cerr << "x: " << x << " vx: " << vx <<  " y: " << y << " vy: " << vy << std::endl;
     std::cerr << "expected ee pos: " << p_ground_to_end_effector_expected.transpose() << std::endl;
-    */
     std::cerr << "expected ground_to_racket pos px, py, pz: " << p_ground_to_racket_expected.transpose() << std::endl;
     std::cerr << "expected ground_to_racket rotation: " << std::endl;
     std::cerr << R_ground_to_racket_expected << std::endl;
     std::cerr << "expected ground_to_racket rpy: " << std::endl;
     std::cerr << rpyFromRot(R_ground_to_racket_expected) << std::endl;
-    /*
     std::cerr << "k hit is: " << k_hit << std::endl;
     std::cerr << "ttc is: " << ttc << std::endl;
     */
@@ -1262,10 +1248,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     //m_target[2] = z + vz * ttc - 9.8 / 2 * ttc * ttc;
     m_target[0] = 1.16611;
     m_target[1] = 0.100694;
-    m_target[2] = 0.81983;
-    //m_target[3] = -0.90624;
-    //m_target[4] = -1.13771;
-    //m_target[5] = -0.618137;
+    // m_target[2] = 0.81983;
+    m_target[2] = 0.81983 + 0.2;
     m_target[3] = -0.585105;
     m_target[4] = -0.978499;
     m_target[5] = -1.12223;
@@ -1310,15 +1294,14 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::Vector3 p_ground_to_rarm = R_ground_to_racket * p_racket_to_rarm + p_ground_to_racket;
     hrp::Matrix33 R_ground_to_rarm = R_ground_to_racket * R_racket_to_end_effector * R_end_effector_to_rarm;
 
+    /*
     std::cerr << " m_target: " << m_target.segment(0, 6).transpose() << std::endl;
     std::cerr << " p_ground_to_racket: " << p_ground_to_racket.transpose() << std::endl;
     std::cerr << " R_ground_to_racket: " << std::endl;
     std::cerr << R_ground_to_racket << std::endl;
-    /*
     std::cerr << " p_ground_to_end_effector: " << p_ground_to_end_effector.transpose() << std::endl;
     std::cerr << " R_ground_to_end_effector: " << std::endl;
     std::cerr << R_ground_to_end_effector << std::endl;
-    */
     std::cerr << " p_ground_to_rarm: " << p_ground_to_rarm.transpose() << std::endl;
     std::cerr << " R_ground_to_rarm: " << std::endl;
     std::cerr << R_ground_to_rarm << std::endl;
@@ -1326,6 +1309,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     std::cerr << " m_robot->link(target_name)->p: " << m_robot->link(target_name)->p.transpose() << std::endl;
     std::cerr << " m_robot->link(target_name)->R: " << std::endl;
     std::cerr << m_robot->link(target_name)->R << std::endl;
+    */
 
     manip->setMaxIKError(m_error_pos,m_error_rot);
 #warning 決め打ち IKIteration
@@ -1345,15 +1329,15 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // dp_modifiedを計算
     hrp::dvector initial_state = hrp::dvector::Zero(c);
     hrp::dmatrix equality_matrix = hrp::dmatrix::Zero(3, c);
-    // why m_bsplines.at(0)???
-    equality_matrix.row(0) = m_bsplines.at(0).calcCoeffVector(m_tCurrent).segment(online_modified_min_id, c); // 現在姿勢
-    equality_matrix.row(1) = m_bsplines.at(0).calcDeltaCoeffVector(m_tCurrent, 1).segment(online_modified_min_id, c); // 現在姿勢の速度
-    equality_matrix.row(2) = m_bsplines.at(0).calcCoeffVector(m_tHit).segment(online_modified_min_id, c); // タスク達成姿勢
+    std::cerr << "m_tCurrent: " << m_tCurrent << ", m_tHit: " << m_tHit << std::endl;
+    // m_bsplinesの中身が同じことを仮定しているので.at(0)を用いている
+    equality_matrix.row(0) = m_bsplines.at(0).calcCoeffVector(m_tCurrent).segment(online_modified_min_id, c); // 右腕の現在関節角
+    equality_matrix.row(1) = m_bsplines.at(0).calcDeltaCoeffVector(m_tCurrent, 1).segment(online_modified_min_id, c); // 現在関節速度
+    equality_matrix.row(2) = m_bsplines.at(0).calcCoeffVector(m_tHit).segment(online_modified_min_id, c); // タスク達成関節角
     hrp::dmatrix inequality_matrix = hrp::dmatrix::Zero(m_id_max - 1, c);
     // 移植の問題でij逆にしている
     for (int j = 0; j < c; j++) {
         int i = online_modified_min_id + j;
-        // why m_bsplines.at(0)???
         inequality_matrix.col(j) = m_bsplines.at(0).calcDeltaMatrix(1).col(i).segment(0, m_id_max - 1);
     }
     hrp::dmatrix eval_weight_matrix = hrp::dmatrix::Zero(c, c);
@@ -1364,11 +1348,23 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::dvector eval_coeff_vector = hrp::dvector::Zero(c);
     hrp::dvector dp_modified = hrp::dvector::Zero(k * c);
     for (int j_k_id = 0; j_k_id < k; j_k_id++) {
+        std::cerr << "debug j_k_id: " << j_k_id << std::endl;
+        std::cerr << "debug: " << __LINE__ << std::endl;
+        // TODO state_min_vector, state_max_vectorを入れる
+        hrp::dvector state_min_vector = hrp::dvector::Zero(c);
+        hrp::dvector state_max_vector = hrp::dvector::Zero(c);
+        std::cerr << "debug: " << __LINE__ << std::endl;
+        for (int i = 0; i < c; i++) {
+            state_min_vector[i] = online_modified_jlist.at(j_k_id)->llimit;
+        }
+        for (int i = 0; i < c; i++) {
+            state_max_vector[i] = online_modified_jlist.at(j_k_id)->ulimit;
+        }
         hrp::dvector equality_coeff = hrp::dvector::Zero(3);
         equality_coeff[2] = dq[j_k_id];
         // this may have some bug
         int id = m_id_max * (indices.at(0) + j_k_id);
-        // why m_bsplines.at(0)?
+        // angular velocity of joint j_k_id of each bspline control point
         hrp::dvector r = (m_p.segment(id, m_id_max).transpose() * m_bsplines.at(0).calcDeltaMatrix(1)).segment(0, m_id_max - 1);
         hrp::dvector inequality_min_vector = hrp::dvector::Zero(m_id_max - 1);
         for (int i = 0; i < m_id_max - 1; i++) {
@@ -1381,24 +1377,41 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         }
         inequality_max_vector -= r;
 #warning ここconst参照的なものにできないか確かめる
+        std::cerr << "debug: " << __LINE__ << std::endl;
         hrp::dmatrix G = eval_weight_matrix;
         hrp::dvector g0 = eval_coeff_vector;
         hrp::dmatrix CE = equality_matrix;
         hrp::dvector ce0 = -equality_coeff; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
-        hrp::dmatrix CI = hrp::dmatrix::Zero(2, (m_id_max - 1) * c);
-        // flatten
-        for (int i = 0; i < c; i++) {
-            for (int j = 0; j < m_id_max - 1; j++) {
-                CI(0, i * (m_id_max - 1) + j) = inequality_matrix(j, i);
-                CI(1, i * (m_id_max - 1) + j) = -inequality_matrix(j, i); // sign has to be inverted
-            }
-        }
-        hrp::dvector ci0 = hrp::dvector::Zero(2*(m_id_max - 1));
-        ci0.segment(0, m_id_max - 1) = inequality_min_vector;
-        ci0.segment(m_id_max, m_id_max - 1) = inequality_max_vector;
+        hrp::dmatrix CI = hrp::dmatrix::Zero(2 * (m_id_max - 1) + 2 * c, c);
+        std::cerr << "debug: " << __LINE__ << std::endl;
+        CI.block(0, 0, c, c) = hrp::dmatrix::Identity(c, c);
+        CI.block(c, 0, c, c) = -hrp::dmatrix::Identity(c, c);
+        CI.block(c * 2, 0, m_id_max - 1, c) = inequality_matrix;
+        CI.block(c * 2 + m_id_max - 1, 0, m_id_max - 1, c) = -inequality_matrix;
+        hrp::dvector ci0 = hrp::dvector::Zero(2 * (m_id_max - 1) + 2 * c);
+#warning changed
+        std::cerr << "debug: " << __LINE__ << std::endl;
+        ci0.segment(0, c) = -state_min_vector;
+        ci0.segment(c, c) = state_max_vector;
+        ci0.segment(c * 2, m_id_max - 1) = -inequality_min_vector;
+        ci0.segment(c * 2 + m_id_max - 1, m_id_max - 1) = inequality_max_vector;
+        std::cerr << "debug: " << __LINE__ << std::endl;
         hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
-        Eigen::solve_quadprog(G, g0, CE, ce0, CI, ci0, tmp_dp_modified); // this returns optimization value, but discarded.
-        dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
+        std::cerr << "debug: " << __LINE__ << std::endl;
+        std::cerr << "G" << G << std::endl;
+        std::cerr << "g0" << g0 << std::endl;
+        std::cerr << "CE" << CE << std::endl;
+        std::cerr << "ce0" << ce0 << std::endl;
+        std::cerr << "CI" << CI << std::endl;
+        std::cerr << "ci0" << ci0 << std::endl;
+        double opt = Eigen::solve_quadprog(G, g0, CE, ce0, CI, ci0, tmp_dp_modified);
+        std::cerr << "opt: " << opt << std::endl;
+        if (std::isfinite(opt)) {
+            dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
+        } else {
+            std::cerr << "qp result is inf or nan" << std::endl;
+            std::cerr << "result is " << tmp_dp_modified.transpose() << std::endl;
+        }
     }
     // dp 返り値の宣言
     hrp::dvector dp = hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
