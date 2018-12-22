@@ -1353,32 +1353,36 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     }
     hrp::dvector eval_coeff_vector = hrp::dvector::Zero(c);
     hrp::dvector dp_modified = hrp::dvector::Zero(k * c);
-    for (int j_k_id = 0; j_k_id < k; j_k_id++) {
+    for (int j_k_id = 0; j_k_id < k; j_k_id++) { // foreach a certain joint
+        int id = m_id_max * (indices.at(0) + j_k_id); // m_p joint id start index
+        // this may have some bug
         // TODO state_min_vector, state_max_vectorを入れる
+        hrp::dvector offset_ps = m_p.segment(online_modified_min_id, c);
         hrp::dvector state_min_vector = hrp::dvector::Zero(c);
         hrp::dvector state_max_vector = hrp::dvector::Zero(c);
         for (int i = 0; i < c; i++) {
             state_min_vector[i] = online_modified_jlist.at(j_k_id)->llimit;
         }
+        state_min_vector -= offset_ps;
         for (int i = 0; i < c; i++) {
             state_max_vector[i] = online_modified_jlist.at(j_k_id)->ulimit;
         }
+        state_max_vector -= offset_ps;
         hrp::dvector equality_coeff = hrp::dvector::Zero(3);
         equality_coeff[2] = dq[j_k_id];
         // this may have some bug
-        int id = m_id_max * (indices.at(0) + j_k_id);
         // angular velocity of joint j_k_id of each bspline control point
-        hrp::dvector r = (m_p.segment(id, m_id_max).transpose() * m_bsplines.at(0).calcDeltaMatrix(1)).segment(0, m_id_max - 1);
+        hrp::dvector offset_vels = (m_p.segment(id, m_id_max).transpose() * m_bsplines.at(0).calcDeltaMatrix(1)).segment(0, m_id_max - 1);
         hrp::dvector inequality_min_vector = hrp::dvector::Zero(m_id_max - 1);
         for (int i = 0; i < m_id_max - 1; i++) {
             inequality_min_vector[i] = online_modified_jlist.at(j_k_id)->lvlimit;
         }
-        inequality_min_vector -= r;
+        inequality_min_vector -= offset_vels;
         hrp::dvector inequality_max_vector = hrp::dvector::Zero(m_id_max - 1);
         for (int i = 0; i < m_id_max - 1; i++) {
             inequality_max_vector[i] = online_modified_jlist.at(j_k_id)->uvlimit;
         }
-        inequality_max_vector -= r;
+        inequality_max_vector -= offset_vels;
 #warning ここconst参照的なものにできないか確かめる
         hrp::dmatrix G = eval_weight_matrix;
         hrp::dvector g0 = eval_coeff_vector;
