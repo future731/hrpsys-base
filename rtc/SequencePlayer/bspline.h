@@ -118,8 +118,10 @@ public:
     if (id < 0 or coeff_matrix_.rows() <= id)
     {
       std::cerr << "Error in function " << __FUNCTION__ << std::endl;
+      std::cerr << "id: " << id << ", coeff_matrix_: " << std::endl;
+      std::cerr << coeff_matrix_ << std::endl;
     }
-    id = std::max(0, std::min(static_cast<int>(coeff_matrix_.rows()) - 1, id ));
+    id = std::max(0, std::min(static_cast<int>(coeff_matrix_.rows()) - 1, id));
     return coeff_matrix_.row(id);
   }
   // }}}
