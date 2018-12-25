@@ -213,7 +213,9 @@ public:
     {
       hrp::dmatrix m_j = this->calcCoeffMatrixForTimeVector((ts + te) / 2.0);
       ttte_ttts = calcIntegralxTxMatrix(te, true, hrp::dmatrix::Zero(recursive_order_ + 1, recursive_order_ + 1), recursive_order_, 0, te) - calcIntegralxTxMatrix(ts, true, hrp::dmatrix::Zero(recursive_order_ + 1, recursive_order_ + 1), recursive_order_, 0, ts) - ttte_ttts;
-      ret = ret + (m_j * d_power_n * ttte_ttts) * (m_j * d_power_n).transpose();
+      hrp::dmatrix mjdn = m_j * d_power_n;
+      hrp::dmatrix mjdn_transpose = mjdn.transpose();
+      ret = ret + mjdn * ttte_ttts * mjdn_transpose;
       ts += t_step_;
       te += t_step_;
     }
