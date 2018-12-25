@@ -218,6 +218,7 @@ class SequencePlayer
   double m_tHit;
   std::vector<BSpline::BSpline> m_bsplines;
   hrp::dvector m_p;
+  hrp::dvector m_last_target; // 6dof so far
   hrp::dvector m_target; // 6dof so far
   int dummy;
 };

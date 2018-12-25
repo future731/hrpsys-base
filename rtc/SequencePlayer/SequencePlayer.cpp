@@ -17,6 +17,7 @@
 #include <hrpUtil/MatrixSolvers.h>
 #include "../ImpedanceController/JointPathEx.h"
 #include "hrpsys/idl/SequencePlayerService.hh"
+#include <sys/time.h>
 
 typedef coil::Guard<coil::Mutex> Guard;
 
@@ -74,6 +75,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_bsplines(std::vector<BSpline::BSpline>()),
       m_p(hrp::dvector::Zero(0)),
       m_target(hrp::dvector::Zero(6)),
+      m_last_target(hrp::dvector::Zero(6)),
       dummy(0)
 {
     sem_init(&m_waitSem, 0, 0);
@@ -324,7 +326,11 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         if (m_onlineModifyStarted) {
             m_tCurrent += dt;
             if (m_isTargetValid) {
+                struct timeval s, e;
+                gettimeofday(&s, NULL);
                 hrp::dvector dp = this->onlineTrajectoryModification();
+                gettimeofday(&e, NULL);
+                std::cerr << "elapsed time: " << e.tv_sec - s.tv_sec + (e.tv_usec - s.tv_usec)*1.0e-6  << "[s]" << std::endl;
                 /*
                 std::cerr << "dp: " << std::endl;
                 for (int i = 0; i < m_bsplines_length; i++) {
@@ -1259,11 +1265,20 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     m_target[3] = -0.585105;
     m_target[4] = -0.978499;
     m_target[5] = -1.12223;
-    std::cerr << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
+    //std::cerr << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
     if (sqsum > 36.0 or ttc > m_tHit) {
+        std::cerr << "target is not valid" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     }
+    static bool is_first_valid_target = true;
+    if (is_first_valid_target) {
+        is_first_valid_target = false;
+        m_last_target = m_target;
+    }
+#warning P control
+    double pos_p_gain = 0.2;
+    m_target = (m_last_target - m_target) * pos_p_gain + m_target;
 
     // dq
     // ラケット先端がm_target(6次元)にある想定
@@ -1325,7 +1340,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         std::cerr << "[onlineTrajectoryModification] ik failed" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     } else {
-        std::cerr << "[onlineTrajectoryModification] ik succeeded" << std::endl;
+        // std::cerr << "[onlineTrajectoryModification] ik succeeded" << std::endl;
     }
     for (int i = 0; i < k; i++) {
         dq[i] = m_robot->joint(indices.at(0) + i)->q - hit_pose[i];
@@ -1345,12 +1360,12 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         velocity_max_limit[i] = online_modified_jlist.at(i)->uvlimit;
     }
     */
-    std::cerr << "dq is: " << dq.transpose() << std::endl;
+    // std::cerr << "dq is: " << dq.transpose() << std::endl;
 
     // dp_modifiedを計算
     hrp::dvector initial_state = hrp::dvector::Zero(c);
     hrp::dmatrix equality_matrix = hrp::dmatrix::Zero(3, c);
-    std::cerr << "m_tCurrent: " << m_tCurrent << ", m_tHit: " << m_tHit << std::endl;
+    // std::cerr << "m_tCurrent: " << m_tCurrent << ", m_tHit: " << m_tHit << std::endl;
     // m_bsplinesの中身が同じことを仮定しているので.at(0)を用いている
     equality_matrix.row(0) = m_bsplines.at(0).calcCoeffVector(m_tCurrent).segment(online_modified_min_id, c); // 右腕の現在関節角
     equality_matrix.row(1) = m_bsplines.at(0).calcDeltaCoeffVector(m_tCurrent, 1).segment(online_modified_min_id, c); // 現在関節速度
@@ -1410,7 +1425,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         ci0.segment(c * 2 + c - 1, c - 1) = inequality_max_vector;
         hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
         double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
-        std::cerr << "opt: " << opt << std::endl;
+        // std::cerr << "opt: " << opt << std::endl;
         /* {{{ debug print
         std::cerr << "now angles as time: " << offset_ps.transpose() << std::endl;
         std::cerr
