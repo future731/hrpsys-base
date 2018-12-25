@@ -342,8 +342,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                 std::cerr << dp[dp.size() - 1] << std::endl;
                 */
                 m_p += dp;
-            } else {
-                std::cerr << "target is not valid" << std::endl;
             }
         }
         double zmp[3], acc[3], pos[3], rpy[3], wrenches[6*m_wrenches.size()];
@@ -1255,17 +1253,16 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         sqsum += var[i] * var[i];
     }
 
-    //m_target[0] = x + vx * ttc;
-    //m_target[1] = y + vy * ttc;
-    //m_target[2] = z + vz * ttc - 9.8 / 2 * ttc * ttc;
-    m_target[0] = 1.16611;
-    m_target[1] = 0.100694;
-    // m_target[2] = 0.81983;
-    m_target[2] = 0.81983 + 0.2;
+    m_target[0] = x + vx * ttc;
+    m_target[1] = y + vy * ttc;
+    m_target[2] = z + vz * ttc - 9.8 / 2 * ttc * ttc;
+    //m_target[0] = 1.16611;
+    //m_target[1] = 0.100694;
+    //m_target[2] = 0.81983 + 0.0;
     m_target[3] = -0.585105;
     m_target[4] = -0.978499;
     m_target[5] = -1.12223;
-    //std::cerr << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
+    std::cerr << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
     if (sqsum > 36.0 or ttc > m_tHit) {
         std::cerr << "target is not valid" << std::endl;
@@ -1279,6 +1276,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
 #warning P control
     double pos_p_gain = 0.2;
     m_target = (m_last_target - m_target) * pos_p_gain + m_target;
+    std::cerr << "target P: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
     // dq
     // ラケット先端がm_target(6次元)にある想定
@@ -1333,8 +1331,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     */
 
     manip->setMaxIKError(m_error_pos,m_error_rot);
-#warning 決め打ち IKIteration
-    manip->setMaxIKIteration(300);
+    manip->setMaxIKIteration(m_iteration);
     bool ik_succeeded = manip->calcInverseKinematics2(p_ground_to_rarm, R_ground_to_rarm);
     if (!ik_succeeded) {
         std::cerr << "[onlineTrajectoryModification] ik failed" << std::endl;
