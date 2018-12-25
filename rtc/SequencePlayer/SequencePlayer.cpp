@@ -1124,7 +1124,6 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     }
     // online_modified_max_id_1は実際のonline_modified_max_idより1大きい
     int c = online_modified_max_id_1 - online_modified_min_id;  // ここは+1する必要がない
-    std::cerr << "online_modified_min anx max+1 id: " << online_modified_min_id << " " << online_modified_max_id_1 << std::endl;
     // 腕だけik
     // online_modified_links ikを解く*limb*のlink(jointを持っている)のリスト
     // RARM_LINK0, 1, 2, 3, 4, 5, 6, 7
@@ -1169,6 +1168,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     }
     // hit_pose: dq計算用 hit_pose_fullのうち補正する関節のみのangle-vector
     hrp::dvector hit_pose = hit_pose_full.segment(indices.at(0), k);
+
     for (int i=0; i<m_robot->numJoints() - 4; i++){
         m_robot->joint(i)->q = hit_pose_full[i];
     }
@@ -1330,6 +1330,21 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     for (int i = 0; i < k; i++) {
         dq[i] = m_robot->joint(indices.at(0) + i)->q - hit_pose[i];
     }
+    /*
+#warning only for debug
+    hrp::dvector angle_min_limit(k);
+    hrp::dvector angle_max_limit(k);
+    for (int i = 0; i < k; i++) {
+        angle_min_limit[i] = online_modified_jlist.at(i)->llimit;
+        angle_max_limit[i] = online_modified_jlist.at(i)->ulimit;
+    }
+    hrp::dvector velocity_min_limit(k);
+    hrp::dvector velocity_max_limit(k);
+    for (int i = 0; i < k; i++) {
+        velocity_min_limit[i] = online_modified_jlist.at(i)->lvlimit;
+        velocity_max_limit[i] = online_modified_jlist.at(i)->uvlimit;
+    }
+    */
     std::cerr << "dq is: " << dq.transpose() << std::endl;
 
     // dp_modifiedを計算
@@ -1341,11 +1356,9 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     equality_matrix.row(1) = m_bsplines.at(0).calcDeltaCoeffVector(m_tCurrent, 1).segment(online_modified_min_id, c); // 現在関節速度
     equality_matrix.row(2) = m_bsplines.at(0).calcCoeffVector(m_tHit).segment(online_modified_min_id, c); // タスク達成関節角
     hrp::dmatrix inequality_matrix = hrp::dmatrix::Zero(m_id_max - 1, c);
-    // 移植の問題でij逆にしている
-    for (int j = 0; j < c; j++) {
-        int i = online_modified_min_id + j;
-        inequality_matrix.col(j) = m_bsplines.at(0).calcDeltaMatrix(1).col(i).segment(0, m_id_max - 1);
-    }
+    // this may have some bug
+    hrp::dmatrix delta_matrix = m_bsplines.at(0).calcDeltaMatrix(1).block(0, 1, c, c - 1);
+    inequality_matrix = delta_matrix.transpose();
     hrp::dmatrix eval_weight_matrix = hrp::dmatrix::Zero(c, c);
     // 後ろの重みが大きいので，後ろに行けば行くほど修正量が小さくなるはず
     for (int i = 0; i < c; i++) {
@@ -1355,9 +1368,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::dvector dp_modified = hrp::dvector::Zero(k * c);
     for (int j_k_id = 0; j_k_id < k; j_k_id++) { // foreach a certain joint
         int id = m_id_max * (indices.at(0) + j_k_id); // m_p joint id start index
-        // this may have some bug
-        // TODO state_min_vector, state_max_vectorを入れる
-        hrp::dvector offset_ps = m_p.segment(online_modified_min_id, c);
+        hrp::dvector offset_ps = m_p.segment(id + online_modified_min_id, c);
         hrp::dvector state_min_vector = hrp::dvector::Zero(c);
         hrp::dvector state_max_vector = hrp::dvector::Zero(c);
         for (int i = 0; i < c; i++) {
@@ -1370,16 +1381,15 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         state_max_vector -= offset_ps;
         hrp::dvector equality_coeff = hrp::dvector::Zero(3);
         equality_coeff[2] = dq[j_k_id];
-        // this may have some bug
         // angular velocity of joint j_k_id of each bspline control point
-        hrp::dvector offset_vels = (m_p.segment(id, m_id_max).transpose() * m_bsplines.at(0).calcDeltaMatrix(1)).segment(0, m_id_max - 1);
-        hrp::dvector inequality_min_vector = hrp::dvector::Zero(m_id_max - 1);
-        for (int i = 0; i < m_id_max - 1; i++) {
+        hrp::dvector offset_vels = delta_matrix.transpose() * m_p.segment(id + online_modified_min_id, c);
+        hrp::dvector inequality_min_vector = hrp::dvector::Zero(c - 1);
+        for (int i = 0; i < c - 1; i++) {
             inequality_min_vector[i] = online_modified_jlist.at(j_k_id)->lvlimit;
         }
         inequality_min_vector -= offset_vels;
-        hrp::dvector inequality_max_vector = hrp::dvector::Zero(m_id_max - 1);
-        for (int i = 0; i < m_id_max - 1; i++) {
+        hrp::dvector inequality_max_vector = hrp::dvector::Zero(c - 1);
+        for (int i = 0; i < c - 1; i++) {
             inequality_max_vector[i] = online_modified_jlist.at(j_k_id)->uvlimit;
         }
         inequality_max_vector -= offset_vels;
@@ -1388,39 +1398,128 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         hrp::dvector g0 = eval_coeff_vector;
         hrp::dmatrix CE = equality_matrix;
         hrp::dvector ce0 = -equality_coeff; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
-        hrp::dmatrix CI = hrp::dmatrix::Zero(2 * (m_id_max - 1) + 2 * c, c);
+        hrp::dmatrix CI = hrp::dmatrix::Zero(2 * (c - 1) + 2 * c, c);
         CI.block(0, 0, c, c) = hrp::dmatrix::Identity(c, c);
         CI.block(c, 0, c, c) = -hrp::dmatrix::Identity(c, c);
-        CI.block(c * 2, 0, m_id_max - 1, c) = inequality_matrix;
-        CI.block(c * 2 + m_id_max - 1, 0, m_id_max - 1, c) = -inequality_matrix;
-        hrp::dvector ci0 = hrp::dvector::Zero(2 * (m_id_max - 1) + 2 * c);
-#warning changed
+        CI.block(c * 2, 0, c - 1, c) = inequality_matrix;
+        CI.block(c * 2 + c - 1, 0, c - 1, c) = -inequality_matrix;
+        hrp::dvector ci0 = hrp::dvector::Zero(2 * (c - 1) + 2 * c);
         ci0.segment(0, c) = -state_min_vector;
         ci0.segment(c, c) = state_max_vector;
-        ci0.segment(c * 2, m_id_max - 1) = -inequality_min_vector;
-        ci0.segment(c * 2 + m_id_max - 1, m_id_max - 1) = inequality_max_vector;
+        ci0.segment(c * 2, c - 1) = -inequality_min_vector;
+        ci0.segment(c * 2 + c - 1, c - 1) = inequality_max_vector;
         hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
-        /*
-        std::cerr << "G" << G << std::endl;
-        std::cerr << "g0" << g0 << std::endl;
-        std::cerr << "CE" << CE << std::endl;
-        std::cerr << "ce0" << ce0 << std::endl;
-        std::cerr << "CI" << CI << std::endl;
-        std::cerr << "ci0" << ci0 << std::endl;
-        std::cerr << "G: " << G.rows() << "x" << G.cols() << std::endl;
-        std::cerr << "g0: " << g0.size() << std::endl;
-        std::cerr << "CE: " << CE.rows() << "x" << CE.cols() << std::endl;
-        std::cerr << "ce0: " << ce0.size() << std::endl;
-        std::cerr << "CI: " << CI.rows() << "x" << CI.cols() << std::endl;
-        std::cerr << "ci0: " << ci0.size() << std::endl;
-        */
         double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
         std::cerr << "opt: " << opt << std::endl;
+        /* {{{ debug print
+        std::cerr << "now angles as time: " << offset_ps.transpose() << std::endl;
+        std::cerr
+            << " min angle: " << angle_min_limit[j_k_id]
+            << " hit angle: " << hit_pose[j_k_id]
+            << " hit angle+dq: " << hit_pose[j_k_id] + dq[j_k_id]
+            << " max angle: " << angle_max_limit[j_k_id]
+            << std::endl;
+        std::cerr << "now velocities as time: " << offset_vels.transpose() << std::endl;
+        std::cerr
+            << " min velocity: " << velocity_min_limit[j_k_id]
+            << " hit velocity: " << offset_vels[j_k_id]
+            << " max velocity: " << velocity_max_limit[j_k_id]
+            << std::endl;
+        std::cerr << "G" << std::endl;
+        for (int i = 0; i < G.rows(); i++) {
+            for (int j = 0; j < G.cols(); j++) {
+                std::cerr << G(i, j) << ",";
+            }
+            std::cerr << std::endl;
+        }
+        std::cerr << "g0" << std::endl;
+        for (int i = 0; i < g0.size(); i++) {
+            std::cerr << g0[i] << ",";
+        }
+        std::cerr << std::endl;
+        std::cerr << "CE" << std::endl;
+        for (int i = 0; i < CE.rows(); i++) {
+            for (int j = 0; j < CE.cols(); j++) {
+                std::cerr << CE(i, j) << ",";
+            }
+            std::cerr << std::endl;
+        }
+        std::cerr << "ce0" << std::endl;
+        for (int i = 0; i < ce0.size(); i++) {
+            std::cerr << ce0[i] << ",";
+        }
+        std::cerr << std::endl;
+        std::cerr << "CI" << std::endl;
+        for (int i = 0; i < CI.rows(); i++) {
+            for (int j = 0; j < CI.cols(); j++) {
+                std::cerr << CI(i, j) << ",";
+            }
+            std::cerr << std::endl;
+        }
+        std::cerr << std::endl;
+        std::cerr << "ci0" << std::endl;
+        for (int i = 0; i < ci0.size(); i++) {
+            std::cerr << ci0[i] << ",";
+        }
+        std::cerr << std::endl;
+        }}} */
         if (std::isfinite(opt)) {
             dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
         } else {
             std::cerr << "qp result is inf or nan" << std::endl;
             std::cerr << "result is " << tmp_dp_modified.transpose() << std::endl;
+            /* {{{ debug print
+            std::cerr << "now angles as time: " << offset_ps.transpose() << std::endl;
+            std::cerr
+                << " min angle: " << angle_min_limit[j_k_id]
+                << " hit angle: " << hit_pose[j_k_id]
+                << " hit angle+dq: " << hit_pose[j_k_id] + dq[j_k_id]
+                << " max angle: " << angle_max_limit[j_k_id]
+                << std::endl;
+            std::cerr << "now velocities as time: " << offset_vels.transpose() << std::endl;
+            std::cerr
+                << " min velocity: " << velocity_min_limit[j_k_id]
+                << " hit velocity: " << offset_vels[j_k_id]
+                << " max velocity: " << velocity_max_limit[j_k_id]
+                << std::endl;
+            std::cerr << "G" << std::endl;
+            for (int i = 0; i < G.rows(); i++) {
+                for (int j = 0; j < G.cols(); j++) {
+                    std::cerr << G(i, j) << ",";
+                }
+                std::cerr << std::endl;
+            }
+            std::cerr << "g0" << std::endl;
+            for (int i = 0; i < g0.size(); i++) {
+                std::cerr << g0[i] << ",";
+            }
+            std::cerr << std::endl;
+            std::cerr << "CE" << std::endl;
+            for (int i = 0; i < CE.rows(); i++) {
+                for (int j = 0; j < CE.cols(); j++) {
+                    std::cerr << CE(i, j) << ",";
+                }
+                std::cerr << std::endl;
+            }
+            std::cerr << "ce0" << std::endl;
+            for (int i = 0; i < ce0.size(); i++) {
+                std::cerr << ce0[i] << ",";
+            }
+            std::cerr << std::endl;
+            std::cerr << "CI" << std::endl;
+            for (int i = 0; i < CI.rows(); i++) {
+                for (int j = 0; j < CI.cols(); j++) {
+                    std::cerr << CI(i, j) << ",";
+                }
+                std::cerr << std::endl;
+            }
+            std::cerr << std::endl;
+            std::cerr << "ci0" << std::endl;
+            for (int i = 0; i < ci0.size(); i++) {
+                std::cerr << ci0[i] << ",";
+            }
+            std::cerr << std::endl;
+            }}} */
         }
     }
     // dp 返り値の宣言
