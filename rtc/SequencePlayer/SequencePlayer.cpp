@@ -184,13 +184,38 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         * 5.irteusgl$ (send *robot* :move-to (progn (send *robot* :move-to (make-coords)) (send (make-coords) :translate (scale -1 (send (car (send *robot* :torso)) :worldpos)) :world)) :world)
         * #<jaxon-robot #X72d4f98 JAXON  -6.0 0.0 -1160.5 / 0.0 0.0 0.0>
         */
+#warning this is offset from euslisp
     m_rootlink_6dof_offset << 6.0 / 1000.0,
         0.0 / 1000.0,
         1160.5 / 1000.0,
         0.0,
         0.0,
         0.0;
-
+    // Setting up debug logger
+    time_t timer;
+    struct tm *local;
+    timer = time(NULL);
+    local = localtime(&timer);
+    int year = local->tm_year + 1900;
+    int month = local->tm_mon + 1;
+    int day = local->tm_mday;
+    int hour = local->tm_hour;
+    int min = local->tm_min;
+    int sec = local->tm_sec;
+    // bool tmp = local->tm_isdst; // is summer time
+    std::ostringstream oss_date;
+    oss_date << std::setfill('0')
+        << std::setw(4) << year << "-"
+        << std::setw(2) << month << "-"
+        << std::setw(2) << day << "-"
+        << std::setw(2) << hour << "-"
+        << std::setw(2) << min << "-"
+        << std::setw(2) << sec <<
+        std::setfill(' ');
+    std::string fname_debug = "/home/leus/m-hattori/hrpsys_bsp_"
+        + oss_date.str() + ".log";
+    m_ofs_bsp_debug = boost::shared_ptr<std::ofstream>(new std::ofstream(fname_debug.c_str()));
+    *m_ofs_bsp_debug << "###### bsp log start: " << oss_date.str() << std::endl;
 
     // Setting for wrench data ports (real + virtual)
     std::vector<std::string> fsensor_names;
@@ -330,16 +355,16 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                 gettimeofday(&s, NULL);
                 hrp::dvector dp = this->onlineTrajectoryModification();
                 gettimeofday(&e, NULL);
-                std::cerr << "elapsed time: " << e.tv_sec - s.tv_sec + (e.tv_usec - s.tv_usec)*1.0e-6  << "[s]" << std::endl;
+                *m_ofs_bsp_debug << "elapsed time: " << e.tv_sec - s.tv_sec + (e.tv_usec - s.tv_usec)*1.0e-6  << "[s]" << std::endl;
                 /*
-                std::cerr << "dp: " << std::endl;
+                *m_ofs_bsp_debug << "dp: " << std::endl;
                 for (int i = 0; i < m_bsplines_length; i++) {
                     for (int j = 0; j < m_id_max; j++) {
-                        std::cerr << dp[m_id_max * i + j] << " ";
+                        *m_ofs_bsp_debug << dp[m_id_max * i + j] << " ";
                     }
-                    std::cerr << std::endl;
+                    *m_ofs_bsp_debug << std::endl;
                 }
-                std::cerr << dp[dp.size() - 1] << std::endl;
+                *m_ofs_bsp_debug << dp[dp.size() - 1] << std::endl;
                 */
                 m_p += dp;
             }
@@ -359,7 +384,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         }
 #warning delete this when stable
         /*
-        static bool init = false;
         if (m_onlineModifyStarted) {
             if (not init) {
                 init = true;
@@ -384,7 +408,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             indices.clear();
             std::string gname("RARM");
             if (! m_seq->getJointGroup(gname.c_str(), indices)) {
-                std::cerr << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
+                *m_ofs_bsp_debug << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
             }
             for (int i = indices.at(0); i <= indices.at(indices.size() - 1); i++) {
                 m_qRef.data[i] = m_bsplines.at(i).calc(m_tCurrent, m_p.segment(m_id_max * i, m_id_max));
@@ -395,7 +419,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             for (int i = 0; i < m_bsplines_length - 6; i++) {
                 ofs_hrpsys_bspline << m_bsplines.at(i).calc(m_tCurrent, m_p.segment(m_id_max * i, m_id_max)) << " ";
             }
-            std::cerr << "m_tCurrent: " <<  m_tCurrent << std::endl;
+            *m_ofs_bsp_debug << "m_tCurrent: " <<  m_tCurrent << std::endl;
 
             ofs_hrpsys_bspline << std::endl;
             ofs_hrpsys_jpos << m_tCurrent << " ";
@@ -1135,7 +1159,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     indices.clear();
     std::string gname = "RARM";
     if (! m_seq->getJointGroup(gname.c_str(), indices)) {
-        std::cerr << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
+        *m_ofs_bsp_debug << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     }
     std::vector<Link*> online_modified_jlist
@@ -1186,9 +1210,9 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
             hit_pose_full[m_robot->numJoints()-4+4],
             hit_pose_full[m_robot->numJoints()-4+3]);
     /*
-    std::cerr << "hit pose full: " << hit_pose_full.segment(m_robot->numJoints() - 4, 6).transpose() << std::endl;
-    std::cerr << "rootlink p: " << m_robot->rootLink()->p.transpose() << std::endl;
-    std::cerr << "rootlink R: " << m_robot->rootLink()->R << std::endl;
+    *m_ofs_bsp_debug << "hit pose full: " << hit_pose_full.segment(m_robot->numJoints() - 4, 6).transpose() << std::endl;
+    *m_ofs_bsp_debug << "rootlink p: " << m_robot->rootLink()->p.transpose() << std::endl;
+    *m_ofs_bsp_debug << "rootlink R: " << m_robot->rootLink()->R << std::endl;
     */
     // 後でdqを求めるため，ikを解く必要があり，その準備として今FKを解いておく
     m_robot->calcForwardKinematics();
@@ -1238,15 +1262,15 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     double hit_pos_y = k_hit * py;
     double ttc = (hit_pos_x - x) / vx;
     /*
-    std::cerr << "x: " << x << " vx: " << vx <<  " y: " << y << " vy: " << vy << std::endl;
-    std::cerr << "expected ee pos: " << p_ground_to_end_effector_expected.transpose() << std::endl;
-    std::cerr << "expected ground_to_racket pos px, py, pz: " << p_ground_to_racket_expected.transpose() << std::endl;
-    std::cerr << "expected ground_to_racket rotation: " << std::endl;
-    std::cerr << R_ground_to_racket_expected << std::endl;
-    std::cerr << "expected ground_to_racket rpy: " << std::endl;
-    std::cerr << rpyFromRot(R_ground_to_racket_expected) << std::endl;
-    std::cerr << "k hit is: " << k_hit << std::endl;
-    std::cerr << "ttc is: " << ttc << std::endl;
+    *m_ofs_bsp_debug << "x: " << x << " vx: " << vx <<  " y: " << y << " vy: " << vy << std::endl;
+    *m_ofs_bsp_debug << "expected ee pos: " << p_ground_to_end_effector_expected.transpose() << std::endl;
+    *m_ofs_bsp_debug << "expected ground_to_racket pos px, py, pz: " << p_ground_to_racket_expected.transpose() << std::endl;
+    *m_ofs_bsp_debug << "expected ground_to_racket rotation: " << std::endl;
+    *m_ofs_bsp_debug << R_ground_to_racket_expected << std::endl;
+    *m_ofs_bsp_debug << "expected ground_to_racket rpy: " << std::endl;
+    *m_ofs_bsp_debug << rpyFromRot(R_ground_to_racket_expected) << std::endl;
+    *m_ofs_bsp_debug << "k hit is: " << k_hit << std::endl;
+    *m_ofs_bsp_debug << "ttc is: " << ttc << std::endl;
     */
     double sqsum = 0.0;
     for (int i = 0; i < var.length(); i++) {
@@ -1262,10 +1286,10 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     m_target[3] = -0.585105;
     m_target[4] = -0.978499;
     m_target[5] = -1.12223;
-    std::cerr << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
+    *m_ofs_bsp_debug << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
     if (sqsum > 36.0 or ttc > m_tHit) {
-        std::cerr << "target is not valid" << std::endl;
+        *m_ofs_bsp_debug << "target is not valid" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     }
     static bool is_first_valid_target = true;
@@ -1276,7 +1300,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
 #warning P control
     double pos_p_gain = 0.2;
     m_target = (m_last_target - m_target) * pos_p_gain + m_target;
-    std::cerr << "target P: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
+    *m_ofs_bsp_debug << "target P: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
     // dq
     // ラケット先端がm_target(6次元)にある想定
@@ -1314,30 +1338,30 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::Matrix33 R_ground_to_rarm = R_ground_to_racket * R_racket_to_end_effector * R_end_effector_to_rarm;
 
     /*
-    std::cerr << " m_target: " << m_target.segment(0, 6).transpose() << std::endl;
-    std::cerr << " p_ground_to_racket: " << p_ground_to_racket.transpose() << std::endl;
-    std::cerr << " R_ground_to_racket: " << std::endl;
-    std::cerr << R_ground_to_racket << std::endl;
-    std::cerr << " p_ground_to_end_effector: " << p_ground_to_end_effector.transpose() << std::endl;
-    std::cerr << " R_ground_to_end_effector: " << std::endl;
-    std::cerr << R_ground_to_end_effector << std::endl;
-    std::cerr << " p_ground_to_rarm: " << p_ground_to_rarm.transpose() << std::endl;
-    std::cerr << " R_ground_to_rarm: " << std::endl;
-    std::cerr << R_ground_to_rarm << std::endl;
+    *m_ofs_bsp_debug << " m_target: " << m_target.segment(0, 6).transpose() << std::endl;
+    *m_ofs_bsp_debug << " p_ground_to_racket: " << p_ground_to_racket.transpose() << std::endl;
+    *m_ofs_bsp_debug << " R_ground_to_racket: " << std::endl;
+    *m_ofs_bsp_debug << R_ground_to_racket << std::endl;
+    *m_ofs_bsp_debug << " p_ground_to_end_effector: " << p_ground_to_end_effector.transpose() << std::endl;
+    *m_ofs_bsp_debug << " R_ground_to_end_effector: " << std::endl;
+    *m_ofs_bsp_debug << R_ground_to_end_effector << std::endl;
+    *m_ofs_bsp_debug << " p_ground_to_rarm: " << p_ground_to_rarm.transpose() << std::endl;
+    *m_ofs_bsp_debug << " R_ground_to_rarm: " << std::endl;
+    *m_ofs_bsp_debug << R_ground_to_rarm << std::endl;
 
-    std::cerr << " m_robot->link(target_name)->p: " << m_robot->link(target_name)->p.transpose() << std::endl;
-    std::cerr << " m_robot->link(target_name)->R: " << std::endl;
-    std::cerr << m_robot->link(target_name)->R << std::endl;
+    *m_ofs_bsp_debug << " m_robot->link(target_name)->p: " << m_robot->link(target_name)->p.transpose() << std::endl;
+    *m_ofs_bsp_debug << " m_robot->link(target_name)->R: " << std::endl;
+    *m_ofs_bsp_debug << m_robot->link(target_name)->R << std::endl;
     */
 
     manip->setMaxIKError(m_error_pos,m_error_rot);
     manip->setMaxIKIteration(m_iteration);
     bool ik_succeeded = manip->calcInverseKinematics2(p_ground_to_rarm, R_ground_to_rarm);
     if (!ik_succeeded) {
-        std::cerr << "[onlineTrajectoryModification] ik failed" << std::endl;
+        *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik failed" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     } else {
-        // std::cerr << "[onlineTrajectoryModification] ik succeeded" << std::endl;
+        // *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik succeeded" << std::endl;
     }
     for (int i = 0; i < k; i++) {
         dq[i] = m_robot->joint(indices.at(0) + i)->q - hit_pose[i];
@@ -1357,12 +1381,12 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         velocity_max_limit[i] = online_modified_jlist.at(i)->uvlimit;
     }
     */
-    // std::cerr << "dq is: " << dq.transpose() << std::endl;
+    // *m_ofs_bsp_debug << "dq is: " << dq.transpose() << std::endl;
 
     // dp_modifiedを計算
     hrp::dvector initial_state = hrp::dvector::Zero(c);
     hrp::dmatrix equality_matrix = hrp::dmatrix::Zero(3, c);
-    // std::cerr << "m_tCurrent: " << m_tCurrent << ", m_tHit: " << m_tHit << std::endl;
+    // *m_ofs_bsp_debug << "m_tCurrent: " << m_tCurrent << ", m_tHit: " << m_tHit << std::endl;
     // m_bsplinesの中身が同じことを仮定しているので.at(0)を用いている
     equality_matrix.row(0) = m_bsplines.at(0).calcCoeffVector(m_tCurrent).segment(online_modified_min_id, c); // 右腕の現在関節角
     equality_matrix.row(1) = m_bsplines.at(0).calcDeltaCoeffVector(m_tCurrent, 1).segment(online_modified_min_id, c); // 現在関節速度
@@ -1422,115 +1446,115 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         ci0.segment(c * 2 + c - 1, c - 1) = inequality_max_vector;
         hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
         double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
-        // std::cerr << "opt: " << opt << std::endl;
+        // *m_ofs_bsp_debug << "opt: " << opt << std::endl;
         /* {{{ debug print
-        std::cerr << "now angles as time: " << offset_ps.transpose() << std::endl;
-        std::cerr
+        *m_ofs_bsp_debug << "now angles as time: " << offset_ps.transpose() << std::endl;
+        *m_ofs_bsp_debug
             << " min angle: " << angle_min_limit[j_k_id]
             << " hit angle: " << hit_pose[j_k_id]
             << " hit angle+dq: " << hit_pose[j_k_id] + dq[j_k_id]
             << " max angle: " << angle_max_limit[j_k_id]
             << std::endl;
-        std::cerr << "now velocities as time: " << offset_vels.transpose() << std::endl;
-        std::cerr
+        *m_ofs_bsp_debug << "now velocities as time: " << offset_vels.transpose() << std::endl;
+        *m_ofs_bsp_debug
             << " min velocity: " << velocity_min_limit[j_k_id]
             << " hit velocity: " << offset_vels[j_k_id]
             << " max velocity: " << velocity_max_limit[j_k_id]
             << std::endl;
-        std::cerr << "G" << std::endl;
+        *m_ofs_bsp_debug << "G" << std::endl;
         for (int i = 0; i < G.rows(); i++) {
             for (int j = 0; j < G.cols(); j++) {
-                std::cerr << G(i, j) << ",";
+                *m_ofs_bsp_debug << G(i, j) << ",";
             }
-            std::cerr << std::endl;
+            *m_ofs_bsp_debug << std::endl;
         }
-        std::cerr << "g0" << std::endl;
+        *m_ofs_bsp_debug << "g0" << std::endl;
         for (int i = 0; i < g0.size(); i++) {
-            std::cerr << g0[i] << ",";
+            *m_ofs_bsp_debug << g0[i] << ",";
         }
-        std::cerr << std::endl;
-        std::cerr << "CE" << std::endl;
+        *m_ofs_bsp_debug << std::endl;
+        *m_ofs_bsp_debug << "CE" << std::endl;
         for (int i = 0; i < CE.rows(); i++) {
             for (int j = 0; j < CE.cols(); j++) {
-                std::cerr << CE(i, j) << ",";
+                *m_ofs_bsp_debug << CE(i, j) << ",";
             }
-            std::cerr << std::endl;
+            *m_ofs_bsp_debug << std::endl;
         }
-        std::cerr << "ce0" << std::endl;
+        *m_ofs_bsp_debug << "ce0" << std::endl;
         for (int i = 0; i < ce0.size(); i++) {
-            std::cerr << ce0[i] << ",";
+            *m_ofs_bsp_debug << ce0[i] << ",";
         }
-        std::cerr << std::endl;
-        std::cerr << "CI" << std::endl;
+        *m_ofs_bsp_debug << std::endl;
+        *m_ofs_bsp_debug << "CI" << std::endl;
         for (int i = 0; i < CI.rows(); i++) {
             for (int j = 0; j < CI.cols(); j++) {
-                std::cerr << CI(i, j) << ",";
+                *m_ofs_bsp_debug << CI(i, j) << ",";
             }
-            std::cerr << std::endl;
+            *m_ofs_bsp_debug << std::endl;
         }
-        std::cerr << std::endl;
-        std::cerr << "ci0" << std::endl;
+        *m_ofs_bsp_debug << std::endl;
+        *m_ofs_bsp_debug << "ci0" << std::endl;
         for (int i = 0; i < ci0.size(); i++) {
-            std::cerr << ci0[i] << ",";
+            *m_ofs_bsp_debug << ci0[i] << ",";
         }
-        std::cerr << std::endl;
+        *m_ofs_bsp_debug << std::endl;
         }}} */
         if (std::isfinite(opt)) {
             dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
         } else {
-            std::cerr << "qp result is inf or nan" << std::endl;
-            std::cerr << "result is " << tmp_dp_modified.transpose() << std::endl;
+            *m_ofs_bsp_debug << "qp result is inf or nan" << std::endl;
+            *m_ofs_bsp_debug << "result is " << tmp_dp_modified.transpose() << std::endl;
             /* {{{ debug print
-            std::cerr << "now angles as time: " << offset_ps.transpose() << std::endl;
-            std::cerr
+            *m_ofs_bsp_debug << "now angles as time: " << offset_ps.transpose() << std::endl;
+            *m_ofs_bsp_debug
                 << " min angle: " << angle_min_limit[j_k_id]
                 << " hit angle: " << hit_pose[j_k_id]
                 << " hit angle+dq: " << hit_pose[j_k_id] + dq[j_k_id]
                 << " max angle: " << angle_max_limit[j_k_id]
                 << std::endl;
-            std::cerr << "now velocities as time: " << offset_vels.transpose() << std::endl;
-            std::cerr
+            *m_ofs_bsp_debug << "now velocities as time: " << offset_vels.transpose() << std::endl;
+            *m_ofs_bsp_debug
                 << " min velocity: " << velocity_min_limit[j_k_id]
                 << " hit velocity: " << offset_vels[j_k_id]
                 << " max velocity: " << velocity_max_limit[j_k_id]
                 << std::endl;
-            std::cerr << "G" << std::endl;
+            *m_ofs_bsp_debug << "G" << std::endl;
             for (int i = 0; i < G.rows(); i++) {
                 for (int j = 0; j < G.cols(); j++) {
-                    std::cerr << G(i, j) << ",";
+                    *m_ofs_bsp_debug << G(i, j) << ",";
                 }
-                std::cerr << std::endl;
+                *m_ofs_bsp_debug << std::endl;
             }
-            std::cerr << "g0" << std::endl;
+            *m_ofs_bsp_debug << "g0" << std::endl;
             for (int i = 0; i < g0.size(); i++) {
-                std::cerr << g0[i] << ",";
+                *m_ofs_bsp_debug << g0[i] << ",";
             }
-            std::cerr << std::endl;
-            std::cerr << "CE" << std::endl;
+            *m_ofs_bsp_debug << std::endl;
+            *m_ofs_bsp_debug << "CE" << std::endl;
             for (int i = 0; i < CE.rows(); i++) {
                 for (int j = 0; j < CE.cols(); j++) {
-                    std::cerr << CE(i, j) << ",";
+                    *m_ofs_bsp_debug << CE(i, j) << ",";
                 }
-                std::cerr << std::endl;
+                *m_ofs_bsp_debug << std::endl;
             }
-            std::cerr << "ce0" << std::endl;
+            *m_ofs_bsp_debug << "ce0" << std::endl;
             for (int i = 0; i < ce0.size(); i++) {
-                std::cerr << ce0[i] << ",";
+                *m_ofs_bsp_debug << ce0[i] << ",";
             }
-            std::cerr << std::endl;
-            std::cerr << "CI" << std::endl;
+            *m_ofs_bsp_debug << std::endl;
+            *m_ofs_bsp_debug << "CI" << std::endl;
             for (int i = 0; i < CI.rows(); i++) {
                 for (int j = 0; j < CI.cols(); j++) {
-                    std::cerr << CI(i, j) << ",";
+                    *m_ofs_bsp_debug << CI(i, j) << ",";
                 }
-                std::cerr << std::endl;
+                *m_ofs_bsp_debug << std::endl;
             }
-            std::cerr << std::endl;
-            std::cerr << "ci0" << std::endl;
+            *m_ofs_bsp_debug << std::endl;
+            *m_ofs_bsp_debug << "ci0" << std::endl;
             for (int i = 0; i < ci0.size(); i++) {
-                std::cerr << ci0[i] << ",";
+                *m_ofs_bsp_debug << ci0[i] << ",";
             }
-            std::cerr << std::endl;
+            *m_ofs_bsp_debug << std::endl;
             }}} */
         }
     }

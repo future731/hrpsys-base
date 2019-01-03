@@ -203,6 +203,8 @@ class SequencePlayer
   hrp::Vector3 m_offsetP, m_fixedP;
   hrp::Matrix33 m_offsetR, m_fixedR;
 
+
+  boost::shared_ptr<std::ofstream> m_ofs_bsp_debug;
   hrp::Vector3 m_p_rarm_to_end_effector;
   hrp::Matrix33 m_R_rarm_to_end_effector;
 
