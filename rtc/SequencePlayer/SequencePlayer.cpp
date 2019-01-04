@@ -210,8 +210,8 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         << std::setw(2) << day << "-"
         << std::setw(2) << hour << "-"
         << std::setw(2) << min << "-"
-        << std::setw(2) << sec <<
-        std::setfill(' ');
+        << std::setw(2) << sec
+        << std::setfill(' ');
     std::string fname_debug = "/home/leus/m-hattori/hrpsys_bsp_"
         + oss_date.str() + ".log";
     m_ofs_bsp_debug = boost::shared_ptr<std::ofstream>(new std::ofstream(fname_debug.c_str()));
@@ -725,6 +725,7 @@ bool SequencePlayer::setJointAnglesSequenceFull(const OpenHRP::dSequenceSequence
     for ( unsigned int i = 0; i < i_wrenches.length(); i++ ) v_wrenches.push_back(i_wrenches[i].get_buffer());
     for ( unsigned int i = 0; i < i_optionals.length(); i++ ) v_optionals.push_back(i_optionals[i].get_buffer());
     for ( unsigned int i = 0; i < i_tms.length();  i++ )  v_tms.push_back(i_tms[i]);
+    *m_ofs_bsp_debug << "SequencePlayer::setJointAnglesSequenceFull called" << std::endl;
     return m_seq->setJointAnglesSequenceFull(v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
 }
 
@@ -764,6 +765,7 @@ bool SequencePlayer::setJointAnglesSequenceFullWithBSpline(short i_bsorder, shor
     for ( unsigned int i = 0; i < i_wrenches.length(); i++ ) v_wrenches.push_back(i_wrenches[i].get_buffer());
     for ( unsigned int i = 0; i < i_optionals.length(); i++ ) v_optionals.push_back(i_optionals[i].get_buffer());
     for ( unsigned int i = 0; i < i_tms.length();  i++ )  v_tms.push_back(i_tms[i]);
+    *m_ofs_bsp_debug << "SequencePlayer::setJointAnglesSequenceFullWithBSpline called" << std::endl;
     return m_seq->setJointAnglesSequenceFullWithBSpline(v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
 }
 
