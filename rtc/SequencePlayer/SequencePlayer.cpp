@@ -1199,8 +1199,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         }
         hit_pose_full[i + m_robot->numJoints() - 4] = m_bsplines.at(i + m_robot->numJoints() - 4).calc(m_tHit, ps);
     }
-    // *m_ofs_bsp_debug << "expected hit virtualjoint rpy: " << hit_pose_full.segment(m_robot->numJoints() - 4 + 3, 3).transpose() << std::endl;
-    // *m_ofs_bsp_debug << "expected hit virtualjoint p: " << hit_pose_full.segment(m_robot->numJoints() - 4, 3).transpose() << std::endl;
+    *m_ofs_bsp_debug << "expected hit virtualjoint rpy: " << hit_pose_full.segment(m_robot->numJoints() - 4 + 3, 3).transpose() << std::endl;
+    *m_ofs_bsp_debug << "expected hit virtualjoint p: " << hit_pose_full.segment(m_robot->numJoints() - 4, 3).transpose() << std::endl;
     hit_pose_full.segment(m_robot->numJoints() - 4 + 3, 3)
         = hrp::rpyFromRot(
 #warning order might be logically wrong
@@ -1220,8 +1220,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
                 hit_pose_full[m_robot->numJoints() - 4 + 5]) * m_rootlink_6dof_offset.segment(0, 3);
 
     // for debug
-    // *m_ofs_bsp_debug << "expected hit rootlink p: " << hit_pose_full.segment(m_robot->numJoints() - 4, 3).transpose() << std::endl;
-    // *m_ofs_bsp_debug << "expected hit rootlink rpy: " << hit_pose_full.segment(m_robot->numJoints() - 4 + 3, 3).transpose() << std::endl;
+    *m_ofs_bsp_debug << "expected hit rootlink p: " << hit_pose_full.segment(m_robot->numJoints() - 4, 3).transpose() << std::endl;
+    *m_ofs_bsp_debug << "expected hit rootlink rpy: " << hit_pose_full.segment(m_robot->numJoints() - 4 + 3, 3).transpose() << std::endl;
 
     // hit_pose: dq計算用 hit_pose_fullのうち補正する関節のみのangle-vector
     hrp::dvector hit_pose = hit_pose_full.segment(indices.at(0), k);
@@ -1240,10 +1240,10 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
             hit_pose_full[m_robot->numJoints()-4+4],
             hit_pose_full[m_robot->numJoints()-4+5]);
 
-    // *m_ofs_bsp_debug << "hit angle-vector" << hit_pose_full.segment(0, m_robot->numJoints() - 4).transpose() << std::endl;
-    // *m_ofs_bsp_debug << "hit pose full (rootlink's x y z r p y): " << hit_pose_full.segment(m_robot->numJoints() - 4, 6).transpose() << std::endl;
-    // *m_ofs_bsp_debug << "rootlink p: " << m_robot->rootLink()->p.transpose() << std::endl;
-    // *m_ofs_bsp_debug << "rootlink R: " << m_robot->rootLink()->R << std::endl;
+    *m_ofs_bsp_debug << "hit angle-vector" << hit_pose_full.segment(0, m_robot->numJoints() - 4).transpose() << std::endl;
+    *m_ofs_bsp_debug << "hit pose full (rootlink's x y z r p y): " << hit_pose_full.segment(m_robot->numJoints() - 4, 6).transpose() << std::endl;
+    *m_ofs_bsp_debug << "rootlink p: " << m_robot->rootLink()->p.transpose() << std::endl;
+    *m_ofs_bsp_debug << "rootlink R: " << m_robot->rootLink()->R << std::endl;
     /*
     */
     // 後でdqを求めるため，ikを解く必要があり，その準備として今FKを解いておく
@@ -1294,8 +1294,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     *m_ofs_bsp_debug << "expected ground_to_racket pos px, py, pz: " << p_ground_to_racket_expected.transpose() << std::endl;
     // *m_ofs_bsp_debug << "expected ground_to_racket rotation: " << std::endl;
     // *m_ofs_bsp_debug << R_ground_to_racket_expected << std::endl;
-    *m_ofs_bsp_debug << "expected ground_to_racket rpy: " << std::endl;
-    *m_ofs_bsp_debug << rpyFromRot(R_ground_to_racket_expected).transpose() << std::endl;
+    *m_ofs_bsp_debug << "expected ground_to_racket rpy: " << rpyFromRot(R_ground_to_racket_expected).transpose() << std::endl;
     *m_ofs_bsp_debug << "k hit is: " << k_hit << std::endl;
     *m_ofs_bsp_debug << "ttc is: " << ttc << std::endl;
     double sqsum = 0.0;
