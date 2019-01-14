@@ -67,6 +67,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_iteration(50),
       m_rootlink_6dof_offset(hrp::dvector::Zero(6)),
       m_onlineModifyStarted(false),
+      m_isChoreonoid(false),
       m_id_max(0),
       m_tMin(0.0),
       m_tMax(std::numeric_limits<double>::max()),
@@ -170,7 +171,7 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
     unsigned int dof = m_robot->numJoints();
 
     // dof + rootlink 6 dof - thk hand 2 * 2
-    m_bsplines_length = dof + 6 - 4;
+    m_bsplines_length = dof + 6 - (m_isChoreonoid ? 4 : 0);
     /*
         * eustf roseus_c_util 1.irteusgl$ (require "package://hrpsys_ros_bridge_tutorials/euslisp/jaxon-interface.l")
         * ;; extending gcstack 0x5834080[32738] --> 0x64ce790[65476] top=7ec4
@@ -213,7 +214,7 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         << std::setw(2) << min << "-"
         << std::setw(2) << sec
         << std::setfill(' ');
-    std::string fname_debug = "/home/leus/m-hattori/hrpsys_bsp_"
+    std::string fname_debug = "/home/future731/research-sandbox/hrpsys_bsp_"
         + oss_date.str() + ".log";
     m_ofs_bsp_debug = boost::shared_ptr<std::ofstream>(new std::ofstream(fname_debug.c_str()));
     *m_ofs_bsp_debug << "###### bsp log start: " << oss_date.str() << std::endl;
@@ -465,7 +466,7 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         /* これはB-Splineの座標系が正しい必要がある
 #warning ここの値の順番が正しいか，またdegなのかradなのか調べる
         if (m_onlineModifyStarted) {
-            int joint_num_without_thk = m_robot->numJoints() - 4;
+            int joint_num_without_thk = m_robot->numJoints() - (m_isChoreonoid ? 4 : 0);
 #warning this is wrong because rotation is not took into account
             pos[0] = m_bsplines.at(joint_num_without_thk + 0).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 0), m_id_max)) + m_rootlink_6dof_offset[0];
             pos[1] = m_bsplines.at(joint_num_without_thk + 1).calc(m_tCurrent, m_p.segment(m_id_max * (joint_num_without_thk + 1), m_id_max)) + m_rootlink_6dof_offset[1];
@@ -1174,7 +1175,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // hit_pose_full: m_tHitでの関節角度+rootlink6自由度の計算, fix-leg-to-coordsなどをして現在姿勢を計算(IKの初期値の姿勢)
     hrp::dvector hit_pose_full = hrp::dvector::Zero(m_bsplines_length);
     // full body joint without THK
-    for (size_t i = 0; i < m_robot->numJoints() - 4; i++) {
+    for (size_t i = 0; i < m_robot->numJoints() - (m_isChoreonoid ? 4 : 0); i++) {
         hrp::dvector ps(m_id_max);
         for (int j = 0; j < m_id_max; j++) {
             ps[j] = m_p[m_id_max * i + j];
@@ -1187,61 +1188,61 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     for (int i = 0; i < 3; i++) {
         hrp::dvector ps(m_id_max);
         for (int j = 0; j < m_id_max; j++) {
-            ps[j] = m_p[m_id_max * (i + m_robot->numJoints() - 4 + 3) + j];
+            ps[j] = m_p[m_id_max * (i + m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 3) + j];
         }
-        hit_pose_full[i + m_robot->numJoints() - 4 + 3] = m_bsplines.at(i + m_robot->numJoints() - 4 + 3).calc(m_tHit, ps);
+        hit_pose_full[i + m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 3] = m_bsplines.at(i + m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 3).calc(m_tHit, ps);
     }
     // rootlink 3dof pos of 6dof
     for (int i = 0; i < 3; i++) {
         hrp::dvector ps(m_id_max);
         for (int j = 0; j < m_id_max; j++) {
-            ps[j] = m_p[m_id_max * (i + m_robot->numJoints() - 4) + j];
+            ps[j] = m_p[m_id_max * (i + m_robot->numJoints() - (m_isChoreonoid ? 4 : 0)) + j];
         }
-        hit_pose_full[i + m_robot->numJoints() - 4] = m_bsplines.at(i + m_robot->numJoints() - 4).calc(m_tHit, ps);
+        hit_pose_full[i + m_robot->numJoints() - (m_isChoreonoid ? 4 : 0)] = m_bsplines.at(i + m_robot->numJoints() - (m_isChoreonoid ? 4 : 0)).calc(m_tHit, ps);
     }
-    // *m_ofs_bsp_debug << "expected hit virtualjoint rpy: " << hit_pose_full.segment(m_robot->numJoints() - 4 + 3, 3).transpose() << std::endl;
-    // *m_ofs_bsp_debug << "expected hit virtualjoint p: " << hit_pose_full.segment(m_robot->numJoints() - 4, 3).transpose() << std::endl;
-    hit_pose_full.segment(m_robot->numJoints() - 4 + 3, 3)
+    // *m_ofs_bsp_debug << "expected hit virtualjoint rpy: " << hit_pose_full.segment(m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 3, 3).transpose() << std::endl;
+    // *m_ofs_bsp_debug << "expected hit virtualjoint p: " << hit_pose_full.segment(m_robot->numJoints() - (m_isChoreonoid ? 4 : 0), 3).transpose() << std::endl;
+    hit_pose_full.segment(m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 3, 3)
         = hrp::rpyFromRot(
 #warning order might be logically wrong
                 hrp::rotFromRpy(
-                    hit_pose_full[m_robot->numJoints() - 4 + 3],
-                    hit_pose_full[m_robot->numJoints() - 4 + 4],
-                    hit_pose_full[m_robot->numJoints() - 4 + 5])
+                    hit_pose_full[m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 3],
+                    hit_pose_full[m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 4],
+                    hit_pose_full[m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 5])
                 * hrp::rotFromRpy(
                     m_rootlink_6dof_offset[3],
                     m_rootlink_6dof_offset[4],
                     m_rootlink_6dof_offset[5])
                         );
-    hit_pose_full.segment(m_robot->numJoints() - 4, 3)
+    hit_pose_full.segment(m_robot->numJoints() - (m_isChoreonoid ? 4 : 0), 3)
         += hrp::rotFromRpy(
-                hit_pose_full[m_robot->numJoints() - 4 + 3],
-                hit_pose_full[m_robot->numJoints() - 4 + 4],
-                hit_pose_full[m_robot->numJoints() - 4 + 5]) * m_rootlink_6dof_offset.segment(0, 3);
+                hit_pose_full[m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 3],
+                hit_pose_full[m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 4],
+                hit_pose_full[m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 5]) * m_rootlink_6dof_offset.segment(0, 3);
 
     // for debug
-    // *m_ofs_bsp_debug << "expected hit rootlink p: " << hit_pose_full.segment(m_robot->numJoints() - 4, 3).transpose() << std::endl;
-    // *m_ofs_bsp_debug << "expected hit rootlink rpy: " << hit_pose_full.segment(m_robot->numJoints() - 4 + 3, 3).transpose() << std::endl;
+    // *m_ofs_bsp_debug << "expected hit rootlink p: " << hit_pose_full.segment(m_robot->numJoints() - (m_isChoreonoid ? 4 : 0), 3).transpose() << std::endl;
+    // *m_ofs_bsp_debug << "expected hit rootlink rpy: " << hit_pose_full.segment(m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + 3, 3).transpose() << std::endl;
 
     // hit_pose: dq計算用 hit_pose_fullのうち補正する関節のみのangle-vector
     hrp::dvector hit_pose = hit_pose_full.segment(indices.at(0), k);
 
-    for (int i=0; i<m_robot->numJoints() - 4; i++){
+    for (int i=0; i<m_robot->numJoints() - (m_isChoreonoid ? 4 : 0); i++){
         m_robot->joint(i)->q = hit_pose_full[i];
     }
 
     for (int i = 0; i < 3; i++) {
-        m_robot->rootLink()->p[i] = hit_pose_full[m_robot->numJoints() - 4 + i];
+        m_robot->rootLink()->p[i] = hit_pose_full[m_robot->numJoints() - (m_isChoreonoid ? 4 : 0) + i];
     }
 
 #warning in euslisp data alignment is ypr
     m_robot->rootLink()->R = hrp::rotFromRpy(
-            hit_pose_full[m_robot->numJoints()-4+3],
-            hit_pose_full[m_robot->numJoints()-4+4],
-            hit_pose_full[m_robot->numJoints()-4+5]);
+            hit_pose_full[m_robot->numJoints()-(m_isChoreonoid ? 4 : 0)+3],
+            hit_pose_full[m_robot->numJoints()-(m_isChoreonoid ? 4 : 0)+4],
+            hit_pose_full[m_robot->numJoints()-(m_isChoreonoid ? 4 : 0)+5]);
 
-    // *m_ofs_bsp_debug << "hit angle-vector" << hit_pose_full.segment(0, m_robot->numJoints() - 4).transpose() << std::endl;
-    // *m_ofs_bsp_debug << "hit pose full (rootlink's x y z r p y): " << hit_pose_full.segment(m_robot->numJoints() - 4, 6).transpose() << std::endl;
+    // *m_ofs_bsp_debug << "hit angle-vector" << hit_pose_full.segment(0, m_robot->numJoints() - (m_isChoreonoid ? 4 : 0)).transpose() << std::endl;
+    // *m_ofs_bsp_debug << "hit pose full (rootlink's x y z r p y): " << hit_pose_full.segment(m_robot->numJoints() - (m_isChoreonoid ? 4 : 0), 6).transpose() << std::endl;
     // *m_ofs_bsp_debug << "rootlink p: " << m_robot->rootLink()->p.transpose() << std::endl;
     // *m_ofs_bsp_debug << "rootlink R: " << m_robot->rootLink()->R << std::endl;
     /*
@@ -1253,6 +1254,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     string target_name = m_robot->joint(indices.at(indices.size()-1))->name;
     // prepare joint path
     hrp::JointPathExPtr manip = hrp::JointPathExPtr(new hrp::JointPathEx(m_robot, m_robot->link(base_parent_name), m_robot->link(target_name), dt, true, std::string(m_profile.instance_name)));
+
+
     hrp::Vector3 p_racket_to_end_effector;
     p_racket_to_end_effector[0] = 0.0;
     p_racket_to_end_effector[1] = -0.470;

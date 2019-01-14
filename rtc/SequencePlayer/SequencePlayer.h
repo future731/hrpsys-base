@@ -208,6 +208,7 @@ class SequencePlayer
   hrp::Vector3 m_p_rarm_to_end_effector;
   hrp::Matrix33 m_R_rarm_to_end_effector;
 
+  bool m_isChoreonoid;
   int m_bsplines_length;
   int m_id_max;
   hrp::dvector m_rootlink_6dof_offset; // just a patch; 本来はEuslisp上でBSplineの値をrootlinkの座標にするのが正しい
