@@ -1300,9 +1300,9 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     *m_ofs_bsp_debug << "expected ground_to_racket rpy: " << rpyFromRot(R_ground_to_racket_expected).transpose() << std::endl;
     *m_ofs_bsp_debug << "k hit is: " << k_hit << std::endl;
     *m_ofs_bsp_debug << "ttc is: " << ttc << std::endl;
-    double sqsum = 0.0;
-    for (int i = 0; i < var.length(); i++) {
-        sqsum += var[i] * var[i];
+    double var_trace = 0.0;
+    for (int i = 0; i < 6; i++) {
+        var_trace += var[i * 6 + i];
     }
 
     m_target[0] = x + vx * ttc;
@@ -1316,7 +1316,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     m_target[5] = -0.502124;
     *m_ofs_bsp_debug << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
-    if (sqsum > 1.0 or ttc > m_tHit and ttc < 0.0) {
+    if (var_trace > 1.0 or ttc > m_tHit and ttc < 0.0) {
         *m_ofs_bsp_debug << "target is not valid" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     }
