@@ -214,7 +214,7 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         << std::setw(2) << min << "-"
         << std::setw(2) << sec
         << std::setfill(' ');
-    std::string fname_debug = "/home/future731/research-sandbox/hrpsys_bsp_"
+    std::string fname_debug = "/home/leus/m-hattori/hrpsys_bsp_"
         + oss_date.str() + ".log";
     m_ofs_bsp_debug = boost::shared_ptr<std::ofstream>(new std::ofstream(fname_debug.c_str()));
     *m_ofs_bsp_debug << "###### bsp log start: " << oss_date.str() << std::endl;
@@ -1301,8 +1301,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     *m_ofs_bsp_debug << "k hit is: " << k_hit << std::endl;
     *m_ofs_bsp_debug << "ttc is: " << ttc << std::endl;
     double var_trace = 0.0;
-    for (int i = 0; i < var.length(); i++) {
-        var_trace += var[i] * var[i];
+    for (int i = 0; i < 6; i++) {
+        var_trace += var[i * 6 + i];
     }
 
     m_target[0] = x + vx * ttc;
