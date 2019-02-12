@@ -1241,7 +1241,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
             hit_pose_full[m_robot->numJoints()-(m_isChoreonoid ? 4 : 0)+4],
             hit_pose_full[m_robot->numJoints()-(m_isChoreonoid ? 4 : 0)+5]);
 
-    *m_ofs_bsp_debug << "hit angle-vector" << hit_pose_full.segment(0, m_robot->numJoints() - (m_isChoreonoid ? 4 : 0)).transpose() << std::endl;
+    *m_ofs_bsp_debug << "hit angle-vector: " << hit_pose_full.segment(0, m_robot->numJoints() - (m_isChoreonoid ? 4 : 0)).transpose() << std::endl;
     *m_ofs_bsp_debug << "hit pose full (rootlink's x y z r p y): " << hit_pose_full.segment(m_robot->numJoints() - (m_isChoreonoid ? 4 : 0), 6).transpose() << std::endl;
     *m_ofs_bsp_debug << "rootlink p: " << m_robot->rootLink()->p.transpose() << std::endl;
     *m_ofs_bsp_debug << "rootlink R: " << m_robot->rootLink()->R << std::endl;
@@ -1300,9 +1300,9 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     *m_ofs_bsp_debug << "expected ground_to_racket rpy: " << rpyFromRot(R_ground_to_racket_expected).transpose() << std::endl;
     *m_ofs_bsp_debug << "k hit is: " << k_hit << std::endl;
     *m_ofs_bsp_debug << "ttc is: " << ttc << std::endl;
-    double sqsum = 0.0;
+    double var_trace = 0.0;
     for (int i = 0; i < var.length(); i++) {
-        sqsum += var[i] * var[i];
+        var_trace += var[i] * var[i];
     }
 
     m_target[0] = x + vx * ttc;
@@ -1316,7 +1316,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     m_target[5] = -0.502124;
     *m_ofs_bsp_debug << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
-    if (sqsum > 1.0 or ttc > m_tHit and ttc < 0.0) {
+    if (var_trace > 0.2 or ttc > m_tHit or ttc < 0.0) {
         *m_ofs_bsp_debug << "target is not valid" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     }
@@ -1325,10 +1325,12 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         is_first_valid_target = false;
         m_last_target = m_target;
     }
+    /*
 #warning P control
     double pos_p_gain = 0.2;
     m_target = (m_last_target - m_target) * pos_p_gain + m_target;
     *m_ofs_bsp_debug << "target P: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
+    */
 
     // dq
     // ラケット先端がm_target(6次元)にある想定
@@ -1382,9 +1384,11 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     *m_ofs_bsp_debug << m_robot->link(target_name)->R << std::endl;
     */
 
-    manip->setMaxIKError(m_error_pos,m_error_rot);
-#warning set ik iteration manually
-    manip->setMaxIKIteration(300);
+#warning set ik parameters manually
+    double ik_error_pos = 0.05;
+    double ik_error_rot = 0.1;
+    manip->setMaxIKError(ik_error_pos,ik_error_rot);
+    manip->setMaxIKIteration(100);
     bool ik_succeeded = manip->calcInverseKinematics2(p_ground_to_rarm, R_ground_to_rarm);
     if (!ik_succeeded) {
         *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik failed" << std::endl;
@@ -1395,7 +1399,6 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     for (int i = 0; i < k; i++) {
         dq[i] = m_robot->joint(indices.at(0) + i)->q - hit_pose[i];
     }
-    /*
 #warning only for debug
     hrp::dvector angle_min_limit(k);
     hrp::dvector angle_max_limit(k);
@@ -1409,8 +1412,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         velocity_min_limit[i] = online_modified_jlist.at(i)->lvlimit;
         velocity_max_limit[i] = online_modified_jlist.at(i)->uvlimit;
     }
-    */
-    // *m_ofs_bsp_debug << "dq is: " << dq.transpose() << std::endl;
+    *m_ofs_bsp_debug << "dq is: " << dq.transpose() << std::endl;
 
     // dp_modifiedを計算
     hrp::dvector initial_state = hrp::dvector::Zero(c);
@@ -1533,7 +1535,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         } else {
             *m_ofs_bsp_debug << "qp result is inf or nan" << std::endl;
             *m_ofs_bsp_debug << "result is " << tmp_dp_modified.transpose() << std::endl;
-            /* {{{ debug print
+            // {{{ debug print
             *m_ofs_bsp_debug << "now angles as time: " << offset_ps.transpose() << std::endl;
             *m_ofs_bsp_debug
                 << " min angle: " << angle_min_limit[j_k_id]
@@ -1584,7 +1586,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
                 *m_ofs_bsp_debug << ci0[i] << ",";
             }
             *m_ofs_bsp_debug << std::endl;
-            }}} */
+            // }}}
+           //return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
         }
     }
     // dp 返り値の宣言
