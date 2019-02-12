@@ -1316,7 +1316,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     m_target[5] = -0.502124;
     *m_ofs_bsp_debug << "target: " << m_target[0] << " " << m_target[1] << " " << m_target[2] << " " << m_target[3] << " " << m_target[4] << " " << m_target[5] << std::endl;
 
-    if (var_trace > 0.2 or ttc > m_tHit or ttc < 0.0) {
+    if (var_trace > 2.0 or ttc > m_tHit or ttc < 0.0) {
         *m_ofs_bsp_debug << "target is not valid" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     }
