@@ -1587,7 +1587,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
             }
             *m_ofs_bsp_debug << std::endl;
             // }}}
-           //return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
+           return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
         }
     }
     // dp 返り値の宣言
