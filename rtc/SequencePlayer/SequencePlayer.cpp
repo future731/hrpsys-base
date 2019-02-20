@@ -19,6 +19,12 @@
 #include "hrpsys/idl/SequencePlayerService.hh"
 #include <sys/time.h>
 
+#ifdef USE_QPOASES_IN_SEQUENCER
+#include "qpOASESWrapper.h"
+#else
+#include "eiquadprog.h"
+#endif
+
 typedef coil::Guard<coil::Mutex> Guard;
 
 // Module specification
@@ -67,7 +73,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_iteration(50),
       m_rootlink_6dof_offset(hrp::dvector::Zero(6)),
       m_onlineModifyStarted(false),
-      m_isChoreonoid(false),
+      m_isChoreonoid(true),
       m_id_max(0),
       m_tMin(0.0),
       m_tMax(std::numeric_limits<double>::max()),
@@ -77,7 +83,8 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_p(hrp::dvector::Zero(0)),
       m_target(hrp::dvector::Zero(6)),
       m_last_target(hrp::dvector::Zero(6)),
-      dummy(0)
+      m_qp_ready(false),
+      m_qp_last_ready(false)
 {
     sem_init(&m_waitSem, 0, 0);
     m_service0.player(this);
@@ -157,6 +164,7 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         coil::stringTo(ee_target, end_effectors_str[i*prop_num+1].c_str());
         coil::stringTo(ee_base, end_effectors_str[i*prop_num+2].c_str());
         hrp::Link* root = m_robot->link(ee_target);
+#warning is this really true?
         for (size_t j = 0; j < 3; j++) {
           coil::stringTo(m_p_rarm_to_end_effector(j), end_effectors_str[i*prop_num+3+j].c_str());
         }
@@ -167,6 +175,24 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         m_R_rarm_to_end_effector = Eigen::AngleAxis<double>(tmpv[3], hrp::Vector3(tmpv[0], tmpv[1], tmpv[2])).toRotationMatrix(); // rotation in VRML is represented by axis + angle
       }
     }
+    hrp::Vector3 p_racket_to_end_effector;
+    p_racket_to_end_effector[0] = 0.0;
+    p_racket_to_end_effector[1] = -0.470;
+    p_racket_to_end_effector[2] = 0.0;
+    hrp::Vector3 rpy_racket_to_end_effector;
+    rpy_racket_to_end_effector[0] = 2.186;
+    rpy_racket_to_end_effector[1] = -0.524;
+    rpy_racket_to_end_effector[2] = 2.186;
+    hrp::Matrix33 R_racket_to_end_effector = rotFromRpy(rpy_racket_to_end_effector[0], rpy_racket_to_end_effector[1], rpy_racket_to_end_effector[2]);
+    m_R_end_effector_to_racket = R_racket_to_end_effector.transpose();
+    m_p_end_effector_to_racket = m_R_end_effector_to_racket * -p_racket_to_end_effector;
+    m_R_end_effector_to_rarm = m_R_rarm_to_end_effector.transpose();
+    m_p_end_effector_to_rarm = m_R_end_effector_to_rarm * -m_p_rarm_to_end_effector;
+    m_p_rarm_to_racket = m_R_rarm_to_end_effector * m_p_end_effector_to_racket + m_p_rarm_to_end_effector;
+    m_R_rarm_to_racket = m_R_rarm_to_end_effector * m_R_end_effector_to_racket;
+    m_R_racket_to_rarm = m_R_rarm_to_racket.transpose();
+    m_p_racket_to_rarm = m_R_racket_to_rarm * -m_p_rarm_to_racket;
+
 
     unsigned int dof = m_robot->numJoints();
 
@@ -214,7 +240,7 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         << std::setw(2) << min << "-"
         << std::setw(2) << sec
         << std::setfill(' ');
-    std::string fname_debug = "/home/leus/m-hattori/hrpsys_bsp_"
+    std::string fname_debug = "/home/future731/research-sandbox/hrpsys_bsp_"
         + oss_date.str() + ".log";
     m_ofs_bsp_debug = boost::shared_ptr<std::ofstream>(new std::ofstream(fname_debug.c_str()));
     *m_ofs_bsp_debug << "###### bsp log start: " << oss_date.str() << std::endl;
@@ -353,11 +379,9 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         if (m_onlineModifyStarted) {
             m_tCurrent += dt;
             if (m_isTargetValid) {
-                struct timeval s, e;
-                gettimeofday(&s, NULL);
-                hrp::dvector dp = this->onlineTrajectoryModification();
-                gettimeofday(&e, NULL);
-                *m_ofs_bsp_debug << "elapsed time: " << e.tv_sec - s.tv_sec + (e.tv_usec - s.tv_usec)*1.0e-6  << "[s]" << std::endl;
+                m_task = boost::make_shared<boost::packaged_task<hrp::dvector> >(boost::bind(&SequencePlayer::onlineTrajectoryModification, this));
+                m_future = m_task->get_future();
+                m_thread = boost::make_shared<boost::thread>(boost::move(*m_task));
                 /*
                 *m_ofs_bsp_debug << "dp: " << std::endl;
                 for (int i = 0; i < m_bsplines_length; i++) {
@@ -368,9 +392,23 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
                 }
                 *m_ofs_bsp_debug << dp[dp.size() - 1] << std::endl;
                 */
-                m_p += dp;
             }
         }
+
+        if (m_future.is_ready()) {
+          if (m_qp_last_ready) {
+            m_qp_ready = true;
+          } else {
+            m_qp_ready = false;
+          }
+          m_qp_last_ready = true;
+        }
+
+        if (m_qp_ready) {
+          hrp::dvector dp = m_future.get();
+          m_p += dp;
+        }
+
         double zmp[3], acc[3], pos[3], rpy[3], wrenches[6*m_wrenches.size()];
         m_seq->get(m_qRef.data.get_buffer(), zmp, acc, pos, rpy, m_tqRef.data.get_buffer(), wrenches, m_optionalData.data.get_buffer());
 
@@ -384,23 +422,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         if (m_onlineModifyStarted and m_tCurrent > m_tMax) {
             m_onlineModifyStarted = false;
         }
-#warning delete this when stable
-        /*
-        if (m_onlineModifyStarted) {
-            if (not init) {
-                init = true;
-                std::ofstream ofs_hrpsys_p("/home/future731/hrpsys_p_orig.txt");
-                for (int i = 0; i < m_bsplines_length - 6; i++) {
-                    for (int j = 0; j < m_id_max; j++) {
-                        ofs_hrpsys_p << m_p.segment(m_id_max * i, m_id_max)[j] << " ";
-                    }
-                }
-                ofs_hrpsys_p << std::endl;
-            }
-        }
-        static std::ofstream ofs_hrpsys_bspline("/home/future731/hrpsys_bsp.txt");
-        static std::ofstream ofs_hrpsys_jpos("/home/future731/hrpsys_jpos.txt");
-        */
         if (m_onlineModifyStarted) {
             // overwrite for online trajectory modification
             // m_qRef.data.length() is 37(numJoints(=33) + THKhand(2*2))
@@ -415,21 +436,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
             for (int i = indices.at(0); i <= indices.at(indices.size() - 1); i++) {
                 m_qRef.data[i] = m_bsplines.at(i).calc(m_tCurrent, m_p.segment(m_id_max * i, m_id_max));
             }
-#warning delete this when stable
-            /*
-            ofs_hrpsys_bspline << m_tCurrent << " ";
-            for (int i = 0; i < m_bsplines_length - 6; i++) {
-                ofs_hrpsys_bspline << m_bsplines.at(i).calc(m_tCurrent, m_p.segment(m_id_max * i, m_id_max)) << " ";
-            }
-            *m_ofs_bsp_debug << "m_tCurrent: " <<  m_tCurrent << std::endl;
-
-            ofs_hrpsys_bspline << std::endl;
-            ofs_hrpsys_jpos << m_tCurrent << " ";
-            for (int i = 0; i < m_bsplines_length - 6; i++) {
-                ofs_hrpsys_jpos << m_qRef.data[i] << " ";
-            }
-            ofs_hrpsys_jpos << std::endl;
-            */
         }
 
         if (m_fixedLink != ""){
@@ -1136,8 +1142,10 @@ void SequencePlayer::setMaxIKIteration(short iter){
  * 返り値としてdp(m_pと同じ長さ)
  */
 hrp::dvector SequencePlayer::onlineTrajectoryModification(){
+    struct timeval time_s, time_e;
+    gettimeofday(&time_s, NULL);
 #warning TODO ターゲットが正しいか判定 フィルタかけるかも
-    const double epsilon = 1e-324;
+    const double epsilon = 2.22507e-308;
     // bsplineのサイズは1以上，その関節は動き始める前提?
     BSpline::BSpline bspline = m_bsplines.at(0);
     hrp::dvector coeff_vector = bspline.calcCoeffVector(m_tCurrent);
@@ -1166,6 +1174,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     std::string gname = "RARM";
     if (! m_seq->getJointGroup(gname.c_str(), indices)) {
         *m_ofs_bsp_debug << "[onlineTrajectoryModification] Could not find joint group " << gname << std::endl;
+        gettimeofday(&time_e, NULL);
+        *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     }
     std::vector<Link*> online_modified_jlist
@@ -1255,29 +1265,13 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // prepare joint path
     hrp::JointPathExPtr manip = hrp::JointPathExPtr(new hrp::JointPathEx(m_robot, m_robot->link(base_parent_name), m_robot->link(target_name), dt, true, std::string(m_profile.instance_name)));
 
-
-    hrp::Vector3 p_racket_to_end_effector;
-    p_racket_to_end_effector[0] = 0.0;
-    p_racket_to_end_effector[1] = -0.470;
-    p_racket_to_end_effector[2] = 0.0;
-    hrp::Vector3 rpy_racket_to_end_effector;
-    rpy_racket_to_end_effector[0] = 2.186;
-    rpy_racket_to_end_effector[1] = -0.524;
-    rpy_racket_to_end_effector[2] = 2.186;
-    hrp::Matrix33 R_racket_to_end_effector = rotFromRpy(rpy_racket_to_end_effector[0], rpy_racket_to_end_effector[1], rpy_racket_to_end_effector[2]);
-    hrp::Matrix33 R_end_effector_to_rarm = m_R_rarm_to_end_effector.transpose();
-    hrp::Vector3 p_end_effector_to_rarm = R_end_effector_to_rarm * -m_p_rarm_to_end_effector;
-    hrp::Matrix33 R_end_effector_to_racket = R_racket_to_end_effector.transpose();
-    hrp::Vector3 p_end_effector_to_racket = R_end_effector_to_racket * -p_racket_to_end_effector;
-
+    // rarm: rarmの最後のjoint, end_effector: rarmのend_effector, racket: ラケット打面中心
     hrp::Matrix33 R_ground_to_rarm_expected = m_robot->link(target_name)->R;
     hrp::Vector3 p_ground_to_rarm_expected = m_robot->link(target_name)->p;
     hrp::Matrix33 R_ground_to_end_effector_expected = R_ground_to_rarm_expected * m_R_rarm_to_end_effector;
     hrp::Vector3 p_ground_to_end_effector_expected = R_ground_to_rarm_expected * m_p_rarm_to_end_effector + p_ground_to_rarm_expected;
-    ///*
-    hrp::Matrix33 R_ground_to_racket_expected = R_ground_to_end_effector_expected * R_end_effector_to_racket;
-    //*/
-    hrp::Vector3 p_ground_to_racket_expected = R_ground_to_end_effector_expected * p_end_effector_to_racket + p_ground_to_end_effector_expected;
+    hrp::Matrix33 R_ground_to_racket_expected = R_ground_to_end_effector_expected * m_R_end_effector_to_racket;
+    hrp::Vector3 p_ground_to_racket_expected = R_ground_to_end_effector_expected * m_p_end_effector_to_racket + p_ground_to_end_effector_expected;
 
     double x = m_hitTarget.point.x;
     double y = m_hitTarget.point.y;
@@ -1318,6 +1312,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
 
     if (var_trace > 2.0 or ttc > m_tHit or ttc < 0.0) {
         *m_ofs_bsp_debug << "target is not valid" << std::endl;
+        gettimeofday(&time_e, NULL);
+        *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     }
     static bool is_first_valid_target = true;
@@ -1362,36 +1358,23 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::Matrix33 R_ground_to_end_effector = R_ground_to_racket * R_racket_to_end_effector;
     */
 
-    hrp::Vector3 p_racket_to_rarm = R_racket_to_end_effector * p_end_effector_to_rarm + p_racket_to_end_effector;
-
-    hrp::Vector3 p_ground_to_rarm = R_ground_to_racket * p_racket_to_rarm + p_ground_to_racket;
-    hrp::Matrix33 R_ground_to_rarm = R_ground_to_racket * R_racket_to_end_effector * R_end_effector_to_rarm;
-
-    /*
-    *m_ofs_bsp_debug << " m_target: " << m_target.segment(0, 6).transpose() << std::endl;
-    *m_ofs_bsp_debug << " p_ground_to_racket: " << p_ground_to_racket.transpose() << std::endl;
-    *m_ofs_bsp_debug << " R_ground_to_racket: " << std::endl;
-    *m_ofs_bsp_debug << R_ground_to_racket << std::endl;
-    *m_ofs_bsp_debug << " p_ground_to_end_effector: " << p_ground_to_end_effector.transpose() << std::endl;
-    *m_ofs_bsp_debug << " R_ground_to_end_effector: " << std::endl;
-    *m_ofs_bsp_debug << R_ground_to_end_effector << std::endl;
-    *m_ofs_bsp_debug << " p_ground_to_rarm: " << p_ground_to_rarm.transpose() << std::endl;
-    *m_ofs_bsp_debug << " R_ground_to_rarm: " << std::endl;
-    *m_ofs_bsp_debug << R_ground_to_rarm << std::endl;
-
-    *m_ofs_bsp_debug << " m_robot->link(target_name)->p: " << m_robot->link(target_name)->p.transpose() << std::endl;
-    *m_ofs_bsp_debug << " m_robot->link(target_name)->R: " << std::endl;
-    *m_ofs_bsp_debug << m_robot->link(target_name)->R << std::endl;
-    */
+    hrp::Vector3 p_ground_to_rarm = R_ground_to_racket * m_p_racket_to_rarm + p_ground_to_racket;
+    hrp::Matrix33 R_ground_to_rarm = R_ground_to_racket * m_R_racket_to_rarm;
 
 #warning set ik parameters manually
     double ik_error_pos = 0.05;
-    double ik_error_rot = 0.1;
+    double ik_error_rot = 1.0;
     manip->setMaxIKError(ik_error_pos,ik_error_rot);
-    manip->setMaxIKIteration(100);
+    manip->setMaxIKIteration(m_iteration);
+    struct timeval time_ik_s, time_ik_e;
+    gettimeofday(&time_ik_s, NULL);
     bool ik_succeeded = manip->calcInverseKinematics2(p_ground_to_rarm, R_ground_to_rarm);
+    gettimeofday(&time_ik_e, NULL);
+    *m_ofs_bsp_debug << "elapsed time ik: " << time_ik_e.tv_sec - time_ik_s.tv_sec + (time_ik_e.tv_usec - time_ik_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
     if (!ik_succeeded) {
         *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik failed" << std::endl;
+        gettimeofday(&time_e, NULL);
+        *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
         return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
     } else {
         *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik succeeded" << std::endl;
@@ -1446,8 +1429,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
             state_max_vector[i] = online_modified_jlist.at(j_k_id)->ulimit;
         }
         state_max_vector -= offset_ps;
-        hrp::dvector equality_coeff = hrp::dvector::Zero(3);
-        equality_coeff[2] = dq[j_k_id];
+        hrp::dvector equality_coeff_vector = hrp::dvector::Zero(3);
+        equality_coeff_vector[2] = dq[j_k_id];
         // angular velocity of joint j_k_id of each bspline control point
         hrp::dvector offset_vels = delta_matrix.transpose() * m_p.segment(id + online_modified_min_id, c);
         hrp::dvector inequality_min_vector = hrp::dvector::Zero(c - 1);
@@ -1460,11 +1443,14 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
             inequality_max_vector[i] = online_modified_jlist.at(j_k_id)->uvlimit;
         }
         inequality_max_vector -= offset_vels;
+        hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
+
+#ifndef USE_QPOASES_IN_SEQUENCER
 #warning ここconst参照的なものにできないか確かめる
         hrp::dmatrix G = eval_weight_matrix;
         hrp::dvector g0 = eval_coeff_vector;
         hrp::dmatrix CE = equality_matrix;
-        hrp::dvector ce0 = -equality_coeff; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
+        hrp::dvector ce0 = -equality_coeff_vector; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
         hrp::dmatrix CI = hrp::dmatrix::Zero(2 * (c - 1) + 2 * c, c);
         CI.block(0, 0, c, c) = hrp::dmatrix::Identity(c, c);
         CI.block(c, 0, c, c) = -hrp::dmatrix::Identity(c, c);
@@ -1475,67 +1461,30 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
         ci0.segment(c, c) = state_max_vector;
         ci0.segment(c * 2, c - 1) = -inequality_min_vector;
         ci0.segment(c * 2 + c - 1, c - 1) = inequality_max_vector;
-        hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
         double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
         // *m_ofs_bsp_debug << "opt: " << opt << std::endl;
-        /* {{{ debug print
-        *m_ofs_bsp_debug << "now angles as time: " << offset_ps.transpose() << std::endl;
-        *m_ofs_bsp_debug
-            << " min angle: " << angle_min_limit[j_k_id]
-            << " hit angle: " << hit_pose[j_k_id]
-            << " hit angle+dq: " << hit_pose[j_k_id] + dq[j_k_id]
-            << " max angle: " << angle_max_limit[j_k_id]
-            << std::endl;
-        *m_ofs_bsp_debug << "now velocities as time: " << offset_vels.transpose() << std::endl;
-        *m_ofs_bsp_debug
-            << " min velocity: " << velocity_min_limit[j_k_id]
-            << " hit velocity: " << offset_vels[j_k_id]
-            << " max velocity: " << velocity_max_limit[j_k_id]
-            << std::endl;
-        *m_ofs_bsp_debug << "G" << std::endl;
-        for (int i = 0; i < G.rows(); i++) {
-            for (int j = 0; j < G.cols(); j++) {
-                *m_ofs_bsp_debug << G(i, j) << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-        }
-        *m_ofs_bsp_debug << "g0" << std::endl;
-        for (int i = 0; i < g0.size(); i++) {
-            *m_ofs_bsp_debug << g0[i] << ",";
-        }
-        *m_ofs_bsp_debug << std::endl;
-        *m_ofs_bsp_debug << "CE" << std::endl;
-        for (int i = 0; i < CE.rows(); i++) {
-            for (int j = 0; j < CE.cols(); j++) {
-                *m_ofs_bsp_debug << CE(i, j) << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-        }
-        *m_ofs_bsp_debug << "ce0" << std::endl;
-        for (int i = 0; i < ce0.size(); i++) {
-            *m_ofs_bsp_debug << ce0[i] << ",";
-        }
-        *m_ofs_bsp_debug << std::endl;
-        *m_ofs_bsp_debug << "CI" << std::endl;
-        for (int i = 0; i < CI.rows(); i++) {
-            for (int j = 0; j < CI.cols(); j++) {
-                *m_ofs_bsp_debug << CI(i, j) << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-        }
-        *m_ofs_bsp_debug << std::endl;
-        *m_ofs_bsp_debug << "ci0" << std::endl;
-        for (int i = 0; i < ci0.size(); i++) {
-            *m_ofs_bsp_debug << ci0[i] << ",";
-        }
-        *m_ofs_bsp_debug << std::endl;
-        }}} */
+#else
+        hrp::dmatrix equality_weight_matrix = hrp::dmatrix::Zero(c, c);
+        equality_weight_matrix(0, 0) = 1.0; // current position equality
+        equality_weight_matrix(1, 1) = 0.5; // current speed equality
+        equality_weight_matrix(2, 2) = 0.4; // target position equality
+        // double opt = solve_strict_qp(state_min_vector, state_max_vector,
+        //         eval_weight_matrix, eval_coeff_vector,
+        //         equality_matrix, equality_coeff_vector,
+        //         inequality_matrix, inequality_min_vector, inequality_max_vector,
+        //         tmp_dp_modified);
+        double opt = solve_mild_qp(state_min_vector, state_max_vector,
+                eval_weight_matrix, eval_coeff_vector,
+                equality_matrix, equality_coeff_vector, equality_weight_matrix,
+                inequality_matrix, inequality_min_vector, inequality_max_vector,
+                tmp_dp_modified);
+#endif
         if (std::isfinite(opt)) {
             dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
         } else {
+            // {{{ debug print
             *m_ofs_bsp_debug << "qp result is inf or nan" << std::endl;
             *m_ofs_bsp_debug << "result is " << tmp_dp_modified.transpose() << std::endl;
-            // {{{ debug print
             *m_ofs_bsp_debug << "now angles as time: " << offset_ps.transpose() << std::endl;
             *m_ofs_bsp_debug
                 << " min angle: " << angle_min_limit[j_k_id]
@@ -1549,6 +1498,104 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
                 << " hit velocity: " << offset_vels[j_k_id]
                 << " max velocity: " << velocity_max_limit[j_k_id]
                 << std::endl;
+#ifdef USE_QPOASES_IN_SEQUENCER
+            *m_ofs_bsp_debug << "state_min_vector" << std::endl;
+            for (int i = 0; i < state_min_vector.size(); i++) {
+                *m_ofs_bsp_debug << state_min_vector[i];
+                if (i != state_min_vector.size() - 1) {
+                    *m_ofs_bsp_debug << ", ";
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+            *m_ofs_bsp_debug << "state_max_vector" << std::endl;
+            for (int i = 0; i < state_max_vector.size(); i++) {
+                *m_ofs_bsp_debug << state_max_vector[i];
+                if (i != state_max_vector.size() - 1) {
+                    *m_ofs_bsp_debug << ", ";
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+            *m_ofs_bsp_debug << "eval_weight_matrix" << std::endl;
+            for (int i = 0; i < eval_weight_matrix.rows(); i++) {
+                for (int j = 0; j < eval_weight_matrix.cols(); j++) {
+                    *m_ofs_bsp_debug << eval_weight_matrix(i, j);
+                    if (i != eval_weight_matrix.rows() - 1 or j != eval_weight_matrix.cols() - 1) {
+                         *m_ofs_bsp_debug << ",";
+                    }
+                }
+                if (i != eval_weight_matrix.rows() - 1) {
+                    *m_ofs_bsp_debug << std::endl;
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+            *m_ofs_bsp_debug << "eval_coeff_vector" << std::endl;
+            for (int i = 0; i < eval_coeff_vector.size(); i++) {
+                *m_ofs_bsp_debug << eval_coeff_vector[i];
+                if (i != eval_coeff_vector.size() - 1) {
+                    *m_ofs_bsp_debug << ", ";
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+            *m_ofs_bsp_debug << "equality_matrix" << std::endl;
+            for (int i = 0; i < equality_matrix.rows(); i++) {
+                for (int j = 0; j < equality_matrix.cols(); j++) {
+                    *m_ofs_bsp_debug << equality_matrix(i, j);
+                    if (i != equality_matrix.rows() - 1 or j != equality_matrix.cols() - 1) {
+                         *m_ofs_bsp_debug << ",";
+                    }
+                }
+                if (i != equality_matrix.rows() - 1) {
+                    *m_ofs_bsp_debug << std::endl;
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+            *m_ofs_bsp_debug << "equality_coeff_vector" << std::endl;
+            for (int i = 0; i < equality_coeff_vector.size(); i++) {
+                *m_ofs_bsp_debug << equality_coeff_vector[i];
+                if (i != equality_coeff_vector.size() - 1) {
+                    *m_ofs_bsp_debug << ", ";
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+            *m_ofs_bsp_debug << "inequality_matrix" << std::endl;
+            for (int i = 0; i < inequality_matrix.rows(); i++) {
+                for (int j = 0; j < inequality_matrix.cols(); j++) {
+                    *m_ofs_bsp_debug << inequality_matrix(i, j);
+                    if (i != inequality_matrix.rows() - 1 or j != inequality_matrix.cols() - 1) {
+                         *m_ofs_bsp_debug << ",";
+                    }
+                }
+                if (i != inequality_matrix.rows() - 1) {
+                    *m_ofs_bsp_debug << std::endl;
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+            *m_ofs_bsp_debug << "inequality_min_vector" << std::endl;
+            for (int i = 0; i < inequality_min_vector.size(); i++) {
+                *m_ofs_bsp_debug << inequality_min_vector[i];
+                if (i != inequality_min_vector.size() - 1) {
+                    *m_ofs_bsp_debug << ", ";
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+            *m_ofs_bsp_debug << "inequality_max_vector" << std::endl;
+            for (int i = 0; i < inequality_max_vector.size(); i++) {
+                *m_ofs_bsp_debug << inequality_max_vector[i];
+                if (i != inequality_max_vector.size() - 1) {
+                    *m_ofs_bsp_debug << ", ";
+                }
+            }
+            *m_ofs_bsp_debug << ";" << std::endl;
+
+#else
             *m_ofs_bsp_debug << "G" << std::endl;
             for (int i = 0; i < G.rows(); i++) {
                 for (int j = 0; j < G.cols(); j++) {
@@ -1586,7 +1633,10 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
                 *m_ofs_bsp_debug << ci0[i] << ",";
             }
             *m_ofs_bsp_debug << std::endl;
+#endif
             // }}}
+           gettimeofday(&time_e, NULL);
+           *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
            return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
         }
     }
@@ -1595,6 +1645,8 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     for (size_t i = 0; i < k; i++) {
         dp.segment((i + indices.at(0)) * m_id_max, c) = dp_modified.segment(i * c, c);
     }
+    gettimeofday(&time_e, NULL);
+    *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
     return dp;
 }
 

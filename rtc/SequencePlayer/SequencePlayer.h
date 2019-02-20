@@ -11,6 +11,8 @@
 #ifndef SEQUENCEPLAYER_H
 #define SEQUENCEPLAYER_H
 
+#define BOOST_THREAD_PROVIDES_FUTURE
+
 #include <rtm/idl/BasicDataType.hh>
 #include <rtm/idl/ExtendedDataTypes.hh>
 #include <semaphore.h>
@@ -25,8 +27,11 @@
 #include <hrpModel/Sensor.h>
 #include "seqplay.h"
 
-#include "eiquadprog.h"
 #include "bspline.h"
+#include <boost/move/move.hpp>
+#include <boost/thread.hpp>
+#include <boost/thread/future.hpp>
+#include <boost/make_shared.hpp>
 
 // Service implementation headers
 // <rtc-template block="service_impl_h">
@@ -205,8 +210,21 @@ class SequencePlayer
 
 
   boost::shared_ptr<std::ofstream> m_ofs_bsp_debug;
+
+  // forward static transform
   hrp::Vector3 m_p_rarm_to_end_effector;
   hrp::Matrix33 m_R_rarm_to_end_effector;
+  hrp::Vector3 m_p_end_effector_to_racket;
+  hrp::Matrix33 m_R_end_effector_to_racket;
+  hrp::Vector3 m_p_rarm_to_racket;
+  hrp::Matrix33 m_R_rarm_to_racket;
+  // backward static transform
+  hrp::Vector3 m_p_racket_to_end_effector;
+  hrp::Matrix33 m_R_racket_to_end_effector;
+  hrp::Vector3 m_p_end_effector_to_rarm;
+  hrp::Matrix33 m_R_end_effector_to_rarm;
+  hrp::Vector3 m_p_racket_to_rarm;
+  hrp::Matrix33 m_R_racket_to_rarm;
 
   bool m_isChoreonoid;
   int m_bsplines_length;
@@ -223,7 +241,11 @@ class SequencePlayer
   hrp::dvector m_p;
   hrp::dvector m_last_target; // 6dof so far
   hrp::dvector m_target; // 6dof so far
-  int dummy;
+  boost::shared_ptr<boost::packaged_task<hrp::dvector> > m_task;
+  boost::future<hrp::dvector> m_future;
+  boost::shared_ptr<boost::thread> m_thread;
+  bool m_qp_ready;
+  bool m_qp_last_ready;
 };
 
 
