@@ -73,8 +73,8 @@ double solve_strict_qp(
   Options options;
   options.printLevel = PL_NONE;
   qp.setOptions(options);
-  sparse_int_t nWSR = 100;
-  real_t max_cputime_sec[1] = { 1e-4 };
+  sparse_int_t nWSR = 1000;
+  real_t max_cputime_sec[1] = { 1 };
   returnValue qp_return_value = qp.init(H, g, A, lb, ub, lbAx, ubAx, nWSR, max_cputime_sec);
   if (qp_return_value == SUCCESSFUL_RETURN) {
     std::cout << "qp succeeded" << std::endl;
@@ -185,7 +185,7 @@ double solve_mild_qp(
   Options options;
   options.printLevel = PL_NONE;
   qp.setOptions(options);
-  sparse_int_t nWSR = 100000000;
+  sparse_int_t nWSR = 1000;
   real_t max_cputime_sec[1] = { 1 };
   returnValue qp_return_value = qp.init(H, g, B, lb, ub, lbBx, ubBx, nWSR, max_cputime_sec);
   if (qp_return_value == SUCCESSFUL_RETURN) {

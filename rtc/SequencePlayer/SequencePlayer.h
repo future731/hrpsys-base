@@ -246,6 +246,7 @@ class SequencePlayer
   boost::shared_ptr<boost::thread> m_thread;
   bool m_qp_ready;
   bool m_qp_last_ready;
+  std::vector<int> m_rarm_indices;
 };
 
 

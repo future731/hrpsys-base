@@ -235,7 +235,7 @@ bool JointPathEx::calcJacobianInverseNullspace(dmatrix &J, dmatrix &Jinv, dmatri
 }
 
 bool JointPathEx::calcInverseKinematics2Loop(const Vector3& dp, const Vector3& omega,
-                                             const double LAMBDA, const double avoid_gain, const double reference_gain, const hrp::dvector* reference_q) {
+                                             const double LAMBDA, const double avoid_gain, const double reference_gain, const hrp::dvector* reference_q, const Vector3& localPos) {
     const int n = numJoints();
 
     if ( DEBUG ) {
@@ -260,7 +260,7 @@ bool JointPathEx::calcInverseKinematics2Loop(const Vector3& dp, const Vector3& o
     if (ij_workspace_dim > 0) {
         v << dp, omega, dvector::Zero(ij_workspace_dim);
         hrp::dmatrix ee_J = dmatrix::Zero(ee_workspace_dim, n);
-        calcJacobian(ee_J);
+        calcJacobian(ee_J, localPos);
         hrp::dmatrix ij_J = dmatrix::Zero(ij_workspace_dim, n);
         for (size_t i = 0; i < ij_workspace_dim; i++) {
             std::pair<size_t, size_t>& pair = interlocking_joint_pair_indices[i];
@@ -270,7 +270,7 @@ bool JointPathEx::calcInverseKinematics2Loop(const Vector3& dp, const Vector3& o
         J << ee_J, ij_J;
     } else {
         v << dp, omega;
-        calcJacobian(J);
+        calcJacobian(J, localPos);
     }
     calcJacobianInverseNullspace(J, Jinv, Jnull);
     dq = Jinv * v; // dq = pseudoInverse(J) * v
@@ -467,7 +467,7 @@ bool JointPathEx::calcInverseKinematics2Loop(const Vector3& end_effector_p, cons
     hrp::Vector3 vel_r(endLink()->R * matrix_logEx(endLink()->R.transpose() * target_link_R));
     vel_p *= vel_gain;
     vel_r *= vel_gain;
-    return calcInverseKinematics2Loop(vel_p, vel_r, LAMBDA, avoid_gain, reference_gain, reference_q);
+    return calcInverseKinematics2Loop(vel_p, vel_r, LAMBDA, avoid_gain, reference_gain, reference_q, localPos);
 }
 
 bool JointPathEx::calcInverseKinematics2(const Vector3& end_p, const Matrix33& end_R,
@@ -552,6 +552,116 @@ bool JointPathEx::calcInverseKinematics2(const Vector3& end_p, const Matrix33& e
       std::cerr << "IK Fail, iter = " << iter << std::endl;
       Vector3 dp(end_p - target->p);
       Vector3 omega(target->R * omegaFromRotEx(target->R.transpose() * end_R));
+      const double errsqr = dp.dot(dp) + omega.dot(omega);
+      if(isBestEffortIKMode){
+        std::cerr << "  err : fabs(" << errsqr << " - " << errsqr0 << ") = " << fabs(errsqr-errsqr0) << " < " << maxIKErrorSqr << " BestEffortIKMode" << std::endl;
+      } else {
+          std::cerr << "  err : " << dp.dot(dp) << " ( " << dp[0] << " " << dp[1] << " " << dp[2] << ") < " << maxIKPosErrorSqr << std::endl;
+          std::cerr << "      : " << omega.dot(omega) << " ( " << omega[0] << " " << omega[1] << " " << omega[2] << ") < " << maxIKRotErrorSqr << std::endl;
+      }
+      for(int i=0; i < n; ++i){
+        joints[i]->q = qorg[i];
+      }
+      calcForwardKinematics();
+    }
+    
+    return converged;
+}
+
+bool JointPathEx::calcInverseKinematics2(const Vector3& end_p, const Matrix33& end_R,
+                                         const Vector3& localPos, const Matrix33& localR,
+                                         const double avoid_gain, const double reference_gain, const hrp::dvector* reference_q)
+{
+    static const int MAX_IK_ITERATION = maxIKIteration;
+    static const double LAMBDA = 0.9;
+
+    LinkPath linkPath(baseLink(), endLink());
+
+    if(joints.empty()){
+        if(linkPath.empty()){
+            return false;
+        }
+        if(baseLink() == endLink()){
+            baseLink()->p = end_p;
+            baseLink()->R = end_R;
+            return true;
+        } else {
+            // \todo implement here
+            return false;
+        }
+    }
+    
+    const int n = numJoints();
+    dvector qorg(n);
+
+    Link* target = linkPath.endLink();
+
+    for(int i=0; i < n; ++i){
+        qorg[i] = joints[i]->q;
+        avoid_weight_gain[i] = 100000000000000000000.0;
+    }
+
+    
+    double errsqr = DBL_MAX;//maxIKErrorSqr * 100.0;
+    double errsqr0 = errsqr;
+    bool converged = false;
+
+    int iter = 0;
+    for(iter = 0; iter < MAX_IK_ITERATION; iter++){
+        
+      if ( DEBUG ) {
+        std::cerr << " iter : " << iter << " / " << MAX_IK_ITERATION << ", n = " << n << std::endl;
+      }
+
+        
+      // エンドエフェクタでの誤差
+      Vector3 dp(end_p - (target->R * localPos + target->p));
+      Vector3 omega((target->R * localR) * omegaFromRotEx((target->R * localR).transpose() * end_R));
+      // 右手最終リンクでの誤差
+      // Matrix33 target_link_R(end_R * localR.transpose());
+      // Vector3 target_link_p(end_p - target_link_R * localPos);
+      // Vector3 dp(target_link_p - (localR * target->p + localPos);
+      // Vector3 omega(target->R * matrix_logEx(target->R.transpose() * target_link_R));
+
+      if ( dp.norm() > 0.1 ) dp = dp*0.1/dp.norm();
+      if ( omega.norm() > 0.5 ) omega = omega*0.5/omega.norm();
+
+
+      if ( DEBUG ) {
+        std::cerr << "   dp : " << dp[0] << " " << dp[1] << " " << dp[2] << std::endl;
+        std::cerr << "omega : " << omega[0] << " " << omega[1] << " " << omega[2] << std::endl;
+        //std::cerr << "    J :" << std::endl << J;
+        //std::cerr << "  det : " << det(J) << std::endl;
+        std::cerr << "  err : dp = " << dp.dot(dp) << ", omega = " <<  omega.dot(omega) << std::endl;
+      }
+
+      if(isBestEffortIKMode){
+        errsqr0 = errsqr;
+        errsqr = dp.dot(dp) + omega.dot(omega);
+        if ( DEBUG ) std::cerr << "  err : fabs(" << std::setw(18) << std::setiosflags(std::ios::fixed) << std::setprecision(14) << errsqr << " - " << errsqr0 << ") = " << fabs(errsqr-errsqr0) << " < " << maxIKErrorSqr << " BestEffortIKMode" << std::endl;
+        if(fabs(errsqr - errsqr0) < maxIKErrorSqr){
+          converged = true;
+          break;
+        }
+      } else {
+        if ( DEBUG ) std::cerr << "  err : " << std::setw(18) << std::setiosflags(std::ios::fixed) << std::setprecision(14) << sqrt(dp.dot(dp)) << " < " << sqrt(maxIKPosErrorSqr) << ", " << std::setw(18) << std::setiosflags(std::ios::fixed) << std::setprecision(14) << sqrt(omega.dot(omega)) << " < " << sqrt(maxIKRotErrorSqr) << std::endl;
+        if( (dp.dot(dp) < maxIKPosErrorSqr) && (omega.dot(omega) < maxIKRotErrorSqr) ) {
+          converged = true;
+          break;
+        }
+      }
+
+      // if ( !calcInverseKinematics2Loop(dp, omega, LAMBDA, avoid_gain, reference_gain, reference_q) )
+      if ( !calcInverseKinematics2Loop(end_p, end_R, LAMBDA, avoid_gain, reference_gain, reference_q, 1.0, localPos, localR) )
+        return false;
+    }
+
+    if(!converged){
+      std::cerr << "IK Fail, iter = " << iter << std::endl;
+        
+      // エンドエフェクタでの誤差
+      Vector3 dp(end_p - (target->R * localPos + target->p));
+      Vector3 omega((target->R * localR) * omegaFromRotEx((target->R * localR).transpose() * end_R));
       const double errsqr = dp.dot(dp) + omega.dot(omega);
       if(isBestEffortIKMode){
         std::cerr << "  err : fabs(" << errsqr << " - " << errsqr0 << ") = " << fabs(errsqr-errsqr0) << " < " << maxIKErrorSqr << " BestEffortIKMode" << std::endl;
