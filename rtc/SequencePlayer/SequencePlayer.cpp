@@ -18,12 +18,7 @@
 #include "../ImpedanceController/JointPathEx.h"
 #include "hrpsys/idl/SequencePlayerService.hh"
 #include <sys/time.h>
-
-#ifdef USE_QPOASES_IN_SEQUENCER
-#include "qpOASESWrapper.h"
-#else
-#include "eiquadprog.h"
-#endif
+#include <boost/algorithm/string.hpp>
 
 typedef coil::Guard<coil::Mutex> Guard;
 
@@ -163,10 +158,11 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         coil::stringTo(ee_name, end_effectors_str[i*prop_num].c_str());
         coil::stringTo(ee_target, end_effectors_str[i*prop_num+1].c_str());
         coil::stringTo(ee_base, end_effectors_str[i*prop_num+2].c_str());
-        hrp::Link* root = m_robot->link(ee_target);
-#warning is this really true?
-        for (size_t j = 0; j < 3; j++) {
-          coil::stringTo(m_p_rarm_to_end_effector(j), end_effectors_str[i*prop_num+3+j].c_str());
+        boost::algorithm::to_upper(ee_name);
+        if (ee_name == "RARM") {
+          for (size_t j = 0; j < 3; j++) {
+            coil::stringTo(m_p_rarm_to_end_effector(j), end_effectors_str[i*prop_num+3+j].c_str());
+          }
         }
         double tmpv[4];
         for (int j = 0; j < 4; j++ ) {
@@ -212,6 +208,7 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         * (send (send (car (send *robot* :links)) :joint) :joint-angle)))
         * #f(0.0 0.0 0.0 0.0 0.0 0.0)
         */
+
 #warning this is offset from euslisp
     m_rootlink_6dof_offset << 0.0 / 1000.0,
         0.0 / 1000.0,
@@ -357,9 +354,10 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
     }
 
     const std::string gname = "RARM";
-    m_rarm_indices.clear();
-    if (! m_seq->getJointGroup(gname.c_str(), m_rarm_indices)) {
-      // std::cerr << "Could not find joint group " << gname << std::endl;
+    if (m_rarm_indices.empty()) {
+      if (! m_seq->getJointGroup(gname.c_str(), m_rarm_indices)) {
+        // std::cerr << "Could not find joint group " << gname << std::endl;
+      }
     }
 
     if (m_seq->isEmpty()){
@@ -384,29 +382,27 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
          */
         // ここでタイマーを更新する
         if (m_onlineModifyStarted) {
-            m_tCurrent += dt;
-            if (m_isTargetValid) {
-                m_task = boost::make_shared<boost::packaged_task<hrp::dvector> >(boost::bind(&SequencePlayer::onlineTrajectoryModification, this));
-                m_future = m_task->get_future();
-                m_thread = boost::make_shared<boost::thread>(boost::move(*m_task));
-                /*
-                *m_ofs_bsp_debug << "dp: " << std::endl;
-                for (int i = 0; i < m_bsplines_length; i++) {
-                    for (int j = 0; j < m_id_max; j++) {
-                        *m_ofs_bsp_debug << dp[m_id_max * i + j] << " ";
-                    }
-                    *m_ofs_bsp_debug << std::endl;
+          m_tCurrent += dt;
+          if (m_isTargetValid) {
+            this->onlineTrajectoryModification();
+            /*
+            *m_ofs_bsp_debug << "dp: " << std::endl;
+            for (int i = 0; i < m_bsplines_length; i++) {
+                for (int j = 0; j < m_id_max; j++) {
+                    *m_ofs_bsp_debug << dp[m_id_max * i + j] << " ";
                 }
-                *m_ofs_bsp_debug << dp[dp.size() - 1] << std::endl;
-                */
+                *m_ofs_bsp_debug << std::endl;
             }
+            *m_ofs_bsp_debug << dp[dp.size() - 1] << std::endl;
+            */
+          }
         }
 
         if (m_future.is_ready()) {
           if (m_qp_last_ready) {
-            m_qp_ready = true;
-          } else {
             m_qp_ready = false;
+          } else {
+            m_qp_ready = true;
           }
           m_qp_last_ready = true;
         }
@@ -1139,11 +1135,8 @@ void SequencePlayer::setMaxIKIteration(short iter){
  * m_tHit(関節角がこの時刻で正しくなっていて欲しいという時刻)
  * m_target(ラケット面の目標位置姿勢)
  * 補正のtarget(6次元)
- * 返り値としてdp(m_pと同じ長さ)
  */
-hrp::dvector SequencePlayer::onlineTrajectoryModification(){
-    struct timeval time_s, time_e;
-    gettimeofday(&time_s, NULL);
+void SequencePlayer::onlineTrajectoryModification(){
 #warning TODO ターゲットが正しいか判定 フィルタかけるかも
     const double epsilon = 2.22507e-308;
     // bsplineのサイズは1以上，その関節は動き始める前提?
@@ -1170,7 +1163,6 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // 腕だけik
     // online_modified_links ikを解く*limb*のlink(jointを持っている)のリスト
     // RARM_LINK0, 1, 2, 3, 4, 5, 6, 7
-#warning m_robot has to be copied because of mutex
 #warning m_ofs_bsp_debug will be deleted
     std::vector<Link*> online_modified_jlist
         = std::vector<Link*>(m_robot->joints().begin() + m_rarm_indices.at(0),
@@ -1252,11 +1244,9 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // 後でdqを求めるため，ikを解く必要があり，その準備として今FKを解いておく
     m_robot->calcForwardKinematics();
     // ラケットの位置を求める
+
     string base_parent_name = m_robot->joint(m_rarm_indices.at(0))->parent->name;
     string target_name = m_robot->joint(m_rarm_indices.at(m_rarm_indices.size()-1))->name;
-    // prepare joint path
-    hrp::JointPathExPtr manip = hrp::JointPathExPtr(new hrp::JointPathEx(m_robot, m_robot->link(base_parent_name), m_robot->link(target_name), dt, true, std::string(m_profile.instance_name)));
-
     // rarm: rarmの最後のjoint, end_effector: rarmのend_effector, racket: ラケット打面中心
     hrp::Matrix33 R_ground_to_rarm_expected = m_robot->link(target_name)->R;
     hrp::Vector3 p_ground_to_rarm_expected = m_robot->link(target_name)->p;
@@ -1304,9 +1294,7 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
 
     if (var_trace > 2.0 or ttc > m_tHit or ttc < 0.0) {
         *m_ofs_bsp_debug << "target is not valid" << std::endl;
-        gettimeofday(&time_e, NULL);
-        *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
-        return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
+        return;
     }
     static bool is_first_valid_target = true;
     if (is_first_valid_target) {
@@ -1332,7 +1320,6 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     // #<coordinates #X1071a898  1.137e-13 -470.0単位注意 -3.411e-13 / 2.186 -0.524 2.186>
     // その上でIKを解く
     // 関節角の差分を返す
-    hrp::dvector dq = hrp::dvector::Zero(k);
 
     // m_targetはラケット先端
     // gripperは無視
@@ -1351,301 +1338,301 @@ hrp::dvector SequencePlayer::onlineTrajectoryModification(){
     hrp::Matrix33 R_ground_to_rarm = R_ground_to_racket * m_R_racket_to_rarm;
     */
 
-#warning set ik parameters manually
-    double ik_error_pos = 0.050;
-    double ik_error_rot = 2.0;
-    manip->setMaxIKError(ik_error_pos,ik_error_rot);
-    manip->setMaxIKIteration(m_iteration);
-    struct timeval time_ik_s, time_ik_e;
-    gettimeofday(&time_ik_s, NULL);
-    // calcInverseKinematics2 with localPos and localR
-    bool ik_succeeded = manip->calcInverseKinematics2(p_ground_to_racket, R_ground_to_racket, m_p_rarm_to_racket, m_R_rarm_to_racket);
+    m_modificator = boost::shared_ptr<OnlineTrajectoryModificatorMT>(new OnlineTrajectoryModificatorMT(m_robot, m_rarm_indices, dt, m_ofs_bsp_debug, std::string(m_profile.instance_name), p_ground_to_racket, R_ground_to_racket, m_p_rarm_to_racket, m_R_rarm_to_racket, m_p, online_modified_min_id, online_modified_max_id_1, hit_pose, m_bsplines, m_tCurrent, m_tHit, m_id_max)); // boost takes up to 9 arguments
+    m_task = boost::make_shared<boost::packaged_task<hrp::dvector> >(boost::bind(&OnlineTrajectoryModificatorMT::calc, m_modificator.get()));
+    m_future = m_task->get_future();
+    m_thread = boost::make_shared<boost::thread>(boost::move(*m_task));
 
-
-    gettimeofday(&time_ik_e, NULL);
-    *m_ofs_bsp_debug << "elapsed time ik: " << time_ik_e.tv_sec - time_ik_s.tv_sec + (time_ik_e.tv_usec - time_ik_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
-    if (!ik_succeeded) {
-        *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik failed" << std::endl;
-        gettimeofday(&time_e, NULL);
-        *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
-        return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
-    } else {
-        *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik succeeded" << std::endl;
-        *m_ofs_bsp_debug << "after ik: ";
-        for (int i = 0; i < k; i++) {
-            *m_ofs_bsp_debug << m_robot->joint(m_rarm_indices.at(0) + i)->q << " ";
-        }
-        *m_ofs_bsp_debug << std::endl;
-    }
-    for (int i = 0; i < k; i++) {
-        dq[i] = m_robot->joint(m_rarm_indices.at(0) + i)->q - hit_pose[i];
-    }
-#warning only for debug
-    hrp::dvector angle_min_limit(k);
-    hrp::dvector angle_max_limit(k);
-    for (int i = 0; i < k; i++) {
-        angle_min_limit[i] = online_modified_jlist.at(i)->llimit;
-        angle_max_limit[i] = online_modified_jlist.at(i)->ulimit;
-    }
-    hrp::dvector velocity_min_limit(k);
-    hrp::dvector velocity_max_limit(k);
-    for (int i = 0; i < k; i++) {
-        velocity_min_limit[i] = online_modified_jlist.at(i)->lvlimit;
-        velocity_max_limit[i] = online_modified_jlist.at(i)->uvlimit;
-    }
-    *m_ofs_bsp_debug << "dq is: " << dq.transpose() << std::endl;
-
-    // dp_modifiedを計算
-    hrp::dvector initial_state = hrp::dvector::Zero(c);
-    hrp::dmatrix equality_matrix = hrp::dmatrix::Zero(3, c);
-    // *m_ofs_bsp_debug << "m_tCurrent: " << m_tCurrent << ", m_tHit: " << m_tHit << std::endl;
-    // m_bsplinesの中身が同じことを仮定しているので.at(0)を用いている
-    equality_matrix.row(0) = m_bsplines.at(0).calcCoeffVector(m_tCurrent).segment(online_modified_min_id, c); // 右腕の現在関節角
-    equality_matrix.row(1) = m_bsplines.at(0).calcDeltaCoeffVector(m_tCurrent, 1).segment(online_modified_min_id, c); // 現在関節速度
-    equality_matrix.row(2) = m_bsplines.at(0).calcCoeffVector(m_tHit).segment(online_modified_min_id, c); // タスク達成関節角
-    hrp::dmatrix inequality_matrix = hrp::dmatrix::Zero(m_id_max - 1, c);
-    // this may have some bug
-    hrp::dmatrix delta_matrix = m_bsplines.at(0).calcDeltaMatrix(1).block(0, 1, c, c - 1);
-    inequality_matrix = delta_matrix.transpose();
-    hrp::dmatrix eval_weight_matrix = hrp::dmatrix::Zero(c, c);
-    // 後ろの重みが大きいので，後ろに行けば行くほど修正量が小さくなるはず
-    for (int i = 0; i < c; i++) {
-        eval_weight_matrix(i, i) = 1 + i * 0.1;
-    }
-    hrp::dvector eval_coeff_vector = hrp::dvector::Zero(c);
-    hrp::dvector dp_modified = hrp::dvector::Zero(k * c);
-    for (int j_k_id = 0; j_k_id < k; j_k_id++) { // foreach a certain joint
-        int id = m_id_max * (m_rarm_indices.at(0) + j_k_id); // m_p joint id start index
-        hrp::dvector offset_ps = m_p.segment(id + online_modified_min_id, c);
-        hrp::dvector state_min_vector = hrp::dvector::Zero(c);
-        hrp::dvector state_max_vector = hrp::dvector::Zero(c);
-        for (int i = 0; i < c; i++) {
-            state_min_vector[i] = online_modified_jlist.at(j_k_id)->llimit;
-        }
-        state_min_vector -= offset_ps;
-        for (int i = 0; i < c; i++) {
-            state_max_vector[i] = online_modified_jlist.at(j_k_id)->ulimit;
-        }
-        state_max_vector -= offset_ps;
-        hrp::dvector equality_coeff_vector = hrp::dvector::Zero(3);
-        equality_coeff_vector[2] = dq[j_k_id];
-        // angular velocity of joint j_k_id of each bspline control point
-        hrp::dvector offset_vels = delta_matrix.transpose() * m_p.segment(id + online_modified_min_id, c);
-        hrp::dvector inequality_min_vector = hrp::dvector::Zero(c - 1);
-        for (int i = 0; i < c - 1; i++) {
-            inequality_min_vector[i] = online_modified_jlist.at(j_k_id)->lvlimit;
-        }
-        inequality_min_vector -= offset_vels;
-        hrp::dvector inequality_max_vector = hrp::dvector::Zero(c - 1);
-        for (int i = 0; i < c - 1; i++) {
-            inequality_max_vector[i] = online_modified_jlist.at(j_k_id)->uvlimit;
-        }
-        inequality_max_vector -= offset_vels;
-        hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
-
-#ifndef USE_QPOASES_IN_SEQUENCER
-#warning ここconst参照的なものにできないか確かめる
-        hrp::dmatrix G = eval_weight_matrix;
-        hrp::dvector g0 = eval_coeff_vector;
-        hrp::dmatrix CE = equality_matrix;
-        hrp::dvector ce0 = -equality_coeff_vector; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
-        hrp::dmatrix CI = hrp::dmatrix::Zero(2 * (c - 1) + 2 * c, c);
-        CI.block(0, 0, c, c) = hrp::dmatrix::Identity(c, c);
-        CI.block(c, 0, c, c) = -hrp::dmatrix::Identity(c, c);
-        CI.block(c * 2, 0, c - 1, c) = inequality_matrix;
-        CI.block(c * 2 + c - 1, 0, c - 1, c) = -inequality_matrix;
-        hrp::dvector ci0 = hrp::dvector::Zero(2 * (c - 1) + 2 * c);
-        ci0.segment(0, c) = -state_min_vector;
-        ci0.segment(c, c) = state_max_vector;
-        ci0.segment(c * 2, c - 1) = -inequality_min_vector;
-        ci0.segment(c * 2 + c - 1, c - 1) = inequality_max_vector;
-        double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
-        // *m_ofs_bsp_debug << "opt: " << opt << std::endl;
-#else
-        double opt = solve_strict_qp(state_min_vector, state_max_vector,
-                eval_weight_matrix, eval_coeff_vector,
-                equality_matrix, equality_coeff_vector,
-                inequality_matrix, inequality_min_vector, inequality_max_vector,
-                tmp_dp_modified);
-        // hrp::dmatrix equality_weight_matrix = hrp::dmatrix::Zero(c, c);
-        // equality_weight_matrix(0, 0) = 1.0; // current position equality
-        // equality_weight_matrix(1, 1) = 0.5; // current speed equality
-        // equality_weight_matrix(2, 2) = 0.4; // target position equality
-        // double opt = solve_mild_qp(state_min_vector, state_max_vector,
-        //         eval_weight_matrix, eval_coeff_vector,
-        //         equality_matrix, equality_coeff_vector, equality_weight_matrix,
-        //         inequality_matrix, inequality_min_vector, inequality_max_vector,
-        //         tmp_dp_modified);
-#endif
-        if (std::isfinite(opt)) {
-            dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
-        } else {
-            // {{{ debug print
-            *m_ofs_bsp_debug << "qp result is inf or nan" << std::endl;
-            *m_ofs_bsp_debug << "result is " << tmp_dp_modified.transpose() << std::endl;
-            *m_ofs_bsp_debug << "now angles as time: " << offset_ps.transpose() << std::endl;
-            *m_ofs_bsp_debug
-                << " min angle: " << angle_min_limit[j_k_id]
-                << " hit angle: " << hit_pose[j_k_id]
-                << " hit angle+dq: " << hit_pose[j_k_id] + dq[j_k_id]
-                << " max angle: " << angle_max_limit[j_k_id]
-                << std::endl;
-            *m_ofs_bsp_debug << "now velocities as time: " << offset_vels.transpose() << std::endl;
-            *m_ofs_bsp_debug
-                << " min velocity: " << velocity_min_limit[j_k_id]
-                << " hit velocity: " << offset_vels[j_k_id]
-                << " max velocity: " << velocity_max_limit[j_k_id]
-                << std::endl;
-#ifdef USE_QPOASES_IN_SEQUENCER
-            *m_ofs_bsp_debug << "state_min_vector" << std::endl;
-            for (int i = 0; i < state_min_vector.size(); i++) {
-                *m_ofs_bsp_debug << state_min_vector[i];
-                if (i != state_min_vector.size() - 1) {
-                    *m_ofs_bsp_debug << ", ";
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-            *m_ofs_bsp_debug << "state_max_vector" << std::endl;
-            for (int i = 0; i < state_max_vector.size(); i++) {
-                *m_ofs_bsp_debug << state_max_vector[i];
-                if (i != state_max_vector.size() - 1) {
-                    *m_ofs_bsp_debug << ", ";
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-            *m_ofs_bsp_debug << "eval_weight_matrix" << std::endl;
-            for (int i = 0; i < eval_weight_matrix.rows(); i++) {
-                for (int j = 0; j < eval_weight_matrix.cols(); j++) {
-                    *m_ofs_bsp_debug << eval_weight_matrix(i, j);
-                    if (i != eval_weight_matrix.rows() - 1 or j != eval_weight_matrix.cols() - 1) {
-                         *m_ofs_bsp_debug << ",";
-                    }
-                }
-                if (i != eval_weight_matrix.rows() - 1) {
-                    *m_ofs_bsp_debug << std::endl;
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-            *m_ofs_bsp_debug << "eval_coeff_vector" << std::endl;
-            for (int i = 0; i < eval_coeff_vector.size(); i++) {
-                *m_ofs_bsp_debug << eval_coeff_vector[i];
-                if (i != eval_coeff_vector.size() - 1) {
-                    *m_ofs_bsp_debug << ", ";
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-            *m_ofs_bsp_debug << "equality_matrix" << std::endl;
-            for (int i = 0; i < equality_matrix.rows(); i++) {
-                for (int j = 0; j < equality_matrix.cols(); j++) {
-                    *m_ofs_bsp_debug << equality_matrix(i, j);
-                    if (i != equality_matrix.rows() - 1 or j != equality_matrix.cols() - 1) {
-                         *m_ofs_bsp_debug << ",";
-                    }
-                }
-                if (i != equality_matrix.rows() - 1) {
-                    *m_ofs_bsp_debug << std::endl;
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-            *m_ofs_bsp_debug << "equality_coeff_vector" << std::endl;
-            for (int i = 0; i < equality_coeff_vector.size(); i++) {
-                *m_ofs_bsp_debug << equality_coeff_vector[i];
-                if (i != equality_coeff_vector.size() - 1) {
-                    *m_ofs_bsp_debug << ", ";
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-            *m_ofs_bsp_debug << "inequality_matrix" << std::endl;
-            for (int i = 0; i < inequality_matrix.rows(); i++) {
-                for (int j = 0; j < inequality_matrix.cols(); j++) {
-                    *m_ofs_bsp_debug << inequality_matrix(i, j);
-                    if (i != inequality_matrix.rows() - 1 or j != inequality_matrix.cols() - 1) {
-                         *m_ofs_bsp_debug << ",";
-                    }
-                }
-                if (i != inequality_matrix.rows() - 1) {
-                    *m_ofs_bsp_debug << std::endl;
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-            *m_ofs_bsp_debug << "inequality_min_vector" << std::endl;
-            for (int i = 0; i < inequality_min_vector.size(); i++) {
-                *m_ofs_bsp_debug << inequality_min_vector[i];
-                if (i != inequality_min_vector.size() - 1) {
-                    *m_ofs_bsp_debug << ", ";
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-            *m_ofs_bsp_debug << "inequality_max_vector" << std::endl;
-            for (int i = 0; i < inequality_max_vector.size(); i++) {
-                *m_ofs_bsp_debug << inequality_max_vector[i];
-                if (i != inequality_max_vector.size() - 1) {
-                    *m_ofs_bsp_debug << ", ";
-                }
-            }
-            *m_ofs_bsp_debug << ";" << std::endl;
-
-#else
-            *m_ofs_bsp_debug << "G" << std::endl;
-            for (int i = 0; i < G.rows(); i++) {
-                for (int j = 0; j < G.cols(); j++) {
-                    *m_ofs_bsp_debug << G(i, j) << ",";
-                }
-                *m_ofs_bsp_debug << std::endl;
-            }
-            *m_ofs_bsp_debug << "g0" << std::endl;
-            for (int i = 0; i < g0.size(); i++) {
-                *m_ofs_bsp_debug << g0[i] << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-            *m_ofs_bsp_debug << "CE" << std::endl;
-            for (int i = 0; i < CE.rows(); i++) {
-                for (int j = 0; j < CE.cols(); j++) {
-                    *m_ofs_bsp_debug << CE(i, j) << ",";
-                }
-                *m_ofs_bsp_debug << std::endl;
-            }
-            *m_ofs_bsp_debug << "ce0" << std::endl;
-            for (int i = 0; i < ce0.size(); i++) {
-                *m_ofs_bsp_debug << ce0[i] << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-            *m_ofs_bsp_debug << "CI" << std::endl;
-            for (int i = 0; i < CI.rows(); i++) {
-                for (int j = 0; j < CI.cols(); j++) {
-                    *m_ofs_bsp_debug << CI(i, j) << ",";
-                }
-                *m_ofs_bsp_debug << std::endl;
-            }
-            *m_ofs_bsp_debug << std::endl;
-            *m_ofs_bsp_debug << "ci0" << std::endl;
-            for (int i = 0; i < ci0.size(); i++) {
-                *m_ofs_bsp_debug << ci0[i] << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-#endif
-            // }}}
-           gettimeofday(&time_e, NULL);
-           *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
-           return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
-        }
-    }
-    // dp 返り値の宣言
-    hrp::dvector dp = hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
-    for (size_t i = 0; i < k; i++) {
-        dp.segment((i + m_rarm_indices.at(0)) * m_id_max, c) = dp_modified.segment(i * c, c);
-    }
-    gettimeofday(&time_e, NULL);
-    *m_ofs_bsp_debug << "elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6  << "[s]" << std::endl;
-    return dp;
+    // {{{ old
+//    // prepare joint path
+//    hrp::JointPathExPtr manip = hrp::JointPathExPtr(new hrp::JointPathEx(m_robot, m_robot->link(base_parent_name), m_robot->link(target_name), dt, true, std::string(m_profile.instance_name)));
+//#warning set ik parameters manually
+//    double ik_error_pos = 0.050;
+//    double ik_error_rot = 2.0;
+//    manip->setMaxIKError(ik_error_pos,ik_error_rot);
+//    manip->setMaxIKIteration(m_iteration);
+//    // calcInverseKinematics2 with localPos and localR
+//    bool ik_succeeded = manip->calcInverseKinematics2(p_ground_to_racket, R_ground_to_racket, m_p_rarm_to_racket, m_R_rarm_to_racket);
+//
+//
+//    if (!ik_succeeded) {
+//        *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik failed" << std::endl;
+//        return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
+//    } else {
+//        *m_ofs_bsp_debug << "[onlineTrajectoryModification] ik succeeded" << std::endl;
+//        *m_ofs_bsp_debug << "after ik: ";
+//        for (int i = 0; i < k; i++) {
+//            *m_ofs_bsp_debug << m_robot->joint(m_rarm_indices.at(0) + i)->q << " ";
+//        }
+//        *m_ofs_bsp_debug << std::endl;
+//    }
+//    hrp::dvector dq = hrp::dvector::Zero(k);
+//    for (int i = 0; i < k; i++) {
+//        dq[i] = m_robot->joint(m_rarm_indices.at(0) + i)->q - hit_pose[i];
+//    }
+//// #warning only for debug
+//    // hrp::dvector angle_min_limit(k);
+//    // hrp::dvector angle_max_limit(k);
+//    // for (int i = 0; i < k; i++) {
+//    //     angle_min_limit[i] = online_modified_jlist.at(i)->llimit;
+//    //     angle_max_limit[i] = online_modified_jlist.at(i)->ulimit;
+//    // }
+//    // hrp::dvector velocity_min_limit(k);
+//    // hrp::dvector velocity_max_limit(k);
+//    // for (int i = 0; i < k; i++) {
+//    //     velocity_min_limit[i] = online_modified_jlist.at(i)->lvlimit;
+//    //     velocity_max_limit[i] = online_modified_jlist.at(i)->uvlimit;
+//    // }
+//    *m_ofs_bsp_debug << "dq is: " << dq.transpose() << std::endl;
+//
+//    // dp_modifiedを計算
+//    hrp::dvector initial_state = hrp::dvector::Zero(c);
+//    hrp::dmatrix equality_matrix = hrp::dmatrix::Zero(3, c);
+//    // *m_ofs_bsp_debug << "m_tCurrent: " << m_tCurrent << ", m_tHit: " << m_tHit << std::endl;
+//    // m_bsplinesの中身が同じことを仮定しているので.at(0)を用いている
+//    equality_matrix.row(0) = m_bsplines.at(0).calcCoeffVector(m_tCurrent).segment(online_modified_min_id, c); // 右腕の現在関節角
+//    equality_matrix.row(1) = m_bsplines.at(0).calcDeltaCoeffVector(m_tCurrent, 1).segment(online_modified_min_id, c); // 現在関節速度
+//    equality_matrix.row(2) = m_bsplines.at(0).calcCoeffVector(m_tHit).segment(online_modified_min_id, c); // タスク達成関節角
+//    // hrp::dmatrix inequality_matrix = hrp::dmatrix::Zero(m_id_max - 1, c);
+//    // this may have some bug
+//    hrp::dmatrix delta_matrix = m_bsplines.at(0).calcDeltaMatrix(1).block(0, 1, c, c - 1);
+//    hrp::dmatrix inequality_matrix = delta_matrix.transpose();
+//    hrp::dmatrix eval_weight_matrix = hrp::dmatrix::Zero(c, c);
+//    // 後ろの重みが大きいので，後ろに行けば行くほど修正量が小さくなるはず
+//    for (int i = 0; i < c; i++) {
+//        eval_weight_matrix(i, i) = 1 + i * 0.1;
+//    }
+//    hrp::dvector eval_coeff_vector = hrp::dvector::Zero(c);
+//    hrp::dvector dp_modified = hrp::dvector::Zero(k * c);
+//    for (int j_k_id = 0; j_k_id < k; j_k_id++) { // foreach a certain joint
+//        int id = m_id_max * (m_rarm_indices.at(0) + j_k_id); // m_p joint id start index
+//        hrp::dvector offset_ps = m_p.segment(id + online_modified_min_id, c);
+//        hrp::dvector state_min_vector = hrp::dvector::Zero(c);
+//        hrp::dvector state_max_vector = hrp::dvector::Zero(c);
+//        for (int i = 0; i < c; i++) {
+//            state_min_vector[i] = online_modified_jlist.at(j_k_id)->llimit;
+//        }
+//        state_min_vector -= offset_ps;
+//        for (int i = 0; i < c; i++) {
+//            state_max_vector[i] = online_modified_jlist.at(j_k_id)->ulimit;
+//        }
+//        state_max_vector -= offset_ps;
+//        hrp::dvector equality_coeff_vector = hrp::dvector::Zero(3);
+//        equality_coeff_vector[2] = dq[j_k_id];
+//        // angular velocity of joint j_k_id of each bspline control point
+//        hrp::dvector offset_vels = delta_matrix.transpose() * m_p.segment(id + online_modified_min_id, c);
+//        hrp::dvector inequality_min_vector = hrp::dvector::Zero(c - 1);
+//        for (int i = 0; i < c - 1; i++) {
+//            inequality_min_vector[i] = online_modified_jlist.at(j_k_id)->lvlimit;
+//        }
+//        inequality_min_vector -= offset_vels;
+//        hrp::dvector inequality_max_vector = hrp::dvector::Zero(c - 1);
+//        for (int i = 0; i < c - 1; i++) {
+//            inequality_max_vector[i] = online_modified_jlist.at(j_k_id)->uvlimit;
+//        }
+//        inequality_max_vector -= offset_vels;
+//        hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
+//
+//#ifndef USE_QPOASES_IN_SEQUENCER
+//#warning ここconst参照的なものにできないか確かめる
+//        hrp::dmatrix G = eval_weight_matrix;
+//        hrp::dvector g0 = eval_coeff_vector;
+//        hrp::dmatrix CE = equality_matrix;
+//        hrp::dvector ce0 = -equality_coeff_vector; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
+//        hrp::dmatrix CI = hrp::dmatrix::Zero(2 * (c - 1) + 2 * c, c);
+//        CI.block(0, 0, c, c) = hrp::dmatrix::Identity(c, c);
+//        CI.block(c, 0, c, c) = -hrp::dmatrix::Identity(c, c);
+//        CI.block(c * 2, 0, c - 1, c) = inequality_matrix;
+//        CI.block(c * 2 + c - 1, 0, c - 1, c) = -inequality_matrix;
+//        hrp::dvector ci0 = hrp::dvector::Zero(2 * (c - 1) + 2 * c);
+//        ci0.segment(0, c) = -state_min_vector;
+//        ci0.segment(c, c) = state_max_vector;
+//        ci0.segment(c * 2, c - 1) = -inequality_min_vector;
+//        ci0.segment(c * 2 + c - 1, c - 1) = inequality_max_vector;
+//        double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
+//        // *m_ofs_bsp_debug << "opt: " << opt << std::endl;
+//#else
+//        double opt = solve_strict_qp(state_min_vector, state_max_vector,
+//                eval_weight_matrix, eval_coeff_vector,
+//                equality_matrix, equality_coeff_vector,
+//                inequality_matrix, inequality_min_vector, inequality_max_vector,
+//                tmp_dp_modified);
+//        // hrp::dmatrix equality_weight_matrix = hrp::dmatrix::Zero(c, c);
+//        // equality_weight_matrix(0, 0) = 1.0; // current position equality
+//        // equality_weight_matrix(1, 1) = 0.5; // current speed equality
+//        // equality_weight_matrix(2, 2) = 0.4; // target position equality
+//        // double opt = solve_mild_qp(state_min_vector, state_max_vector,
+//        //         eval_weight_matrix, eval_coeff_vector,
+//        //         equality_matrix, equality_coeff_vector, equality_weight_matrix,
+//        //         inequality_matrix, inequality_min_vector, inequality_max_vector,
+//        //         tmp_dp_modified);
+//#endif
+//        if (std::isfinite(opt)) {
+//            dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
+//        } else {
+//            // {{{ debug print
+//            *m_ofs_bsp_debug << "qp result is inf or nan" << std::endl;
+//            *m_ofs_bsp_debug << "result is " << tmp_dp_modified.transpose() << std::endl;
+//            *m_ofs_bsp_debug << "now angles as time: " << offset_ps.transpose() << std::endl;
+//            // *m_ofs_bsp_debug
+//            //     << " min angle: " << angle_min_limit[j_k_id]
+//            //     << " hit angle: " << hit_pose[j_k_id]
+//            //     << " hit angle+dq: " << hit_pose[j_k_id] + dq[j_k_id]
+//            //     << " max angle: " << angle_max_limit[j_k_id]
+//            //     << std::endl;
+//            *m_ofs_bsp_debug << "now velocities as time: " << offset_vels.transpose() << std::endl;
+//            *m_ofs_bsp_debug
+//                << " min velocity: " << velocity_min_limit[j_k_id]
+//                << " hit velocity: " << offset_vels[j_k_id]
+//                << " max velocity: " << velocity_max_limit[j_k_id]
+//                << std::endl;
+//#ifdef USE_QPOASES_IN_SEQUENCER
+//            *m_ofs_bsp_debug << "state_min_vector" << std::endl;
+//            for (int i = 0; i < state_min_vector.size(); i++) {
+//                *m_ofs_bsp_debug << state_min_vector[i];
+//                if (i != state_min_vector.size() - 1) {
+//                    *m_ofs_bsp_debug << ", ";
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//            *m_ofs_bsp_debug << "state_max_vector" << std::endl;
+//            for (int i = 0; i < state_max_vector.size(); i++) {
+//                *m_ofs_bsp_debug << state_max_vector[i];
+//                if (i != state_max_vector.size() - 1) {
+//                    *m_ofs_bsp_debug << ", ";
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//            *m_ofs_bsp_debug << "eval_weight_matrix" << std::endl;
+//            for (int i = 0; i < eval_weight_matrix.rows(); i++) {
+//                for (int j = 0; j < eval_weight_matrix.cols(); j++) {
+//                    *m_ofs_bsp_debug << eval_weight_matrix(i, j);
+//                    if (i != eval_weight_matrix.rows() - 1 or j != eval_weight_matrix.cols() - 1) {
+//                         *m_ofs_bsp_debug << ",";
+//                    }
+//                }
+//                if (i != eval_weight_matrix.rows() - 1) {
+//                    *m_ofs_bsp_debug << std::endl;
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//            *m_ofs_bsp_debug << "eval_coeff_vector" << std::endl;
+//            for (int i = 0; i < eval_coeff_vector.size(); i++) {
+//                *m_ofs_bsp_debug << eval_coeff_vector[i];
+//                if (i != eval_coeff_vector.size() - 1) {
+//                    *m_ofs_bsp_debug << ", ";
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//            *m_ofs_bsp_debug << "equality_matrix" << std::endl;
+//            for (int i = 0; i < equality_matrix.rows(); i++) {
+//                for (int j = 0; j < equality_matrix.cols(); j++) {
+//                    *m_ofs_bsp_debug << equality_matrix(i, j);
+//                    if (i != equality_matrix.rows() - 1 or j != equality_matrix.cols() - 1) {
+//                         *m_ofs_bsp_debug << ",";
+//                    }
+//                }
+//                if (i != equality_matrix.rows() - 1) {
+//                    *m_ofs_bsp_debug << std::endl;
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//            *m_ofs_bsp_debug << "equality_coeff_vector" << std::endl;
+//            for (int i = 0; i < equality_coeff_vector.size(); i++) {
+//                *m_ofs_bsp_debug << equality_coeff_vector[i];
+//                if (i != equality_coeff_vector.size() - 1) {
+//                    *m_ofs_bsp_debug << ", ";
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//            *m_ofs_bsp_debug << "inequality_matrix" << std::endl;
+//            for (int i = 0; i < inequality_matrix.rows(); i++) {
+//                for (int j = 0; j < inequality_matrix.cols(); j++) {
+//                    *m_ofs_bsp_debug << inequality_matrix(i, j);
+//                    if (i != inequality_matrix.rows() - 1 or j != inequality_matrix.cols() - 1) {
+//                         *m_ofs_bsp_debug << ",";
+//                    }
+//                }
+//                if (i != inequality_matrix.rows() - 1) {
+//                    *m_ofs_bsp_debug << std::endl;
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//            *m_ofs_bsp_debug << "inequality_min_vector" << std::endl;
+//            for (int i = 0; i < inequality_min_vector.size(); i++) {
+//                *m_ofs_bsp_debug << inequality_min_vector[i];
+//                if (i != inequality_min_vector.size() - 1) {
+//                    *m_ofs_bsp_debug << ", ";
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//            *m_ofs_bsp_debug << "inequality_max_vector" << std::endl;
+//            for (int i = 0; i < inequality_max_vector.size(); i++) {
+//                *m_ofs_bsp_debug << inequality_max_vector[i];
+//                if (i != inequality_max_vector.size() - 1) {
+//                    *m_ofs_bsp_debug << ", ";
+//                }
+//            }
+//            *m_ofs_bsp_debug << ";" << std::endl;
+//
+//#else
+//            *m_ofs_bsp_debug << "G" << std::endl;
+//            for (int i = 0; i < G.rows(); i++) {
+//                for (int j = 0; j < G.cols(); j++) {
+//                    *m_ofs_bsp_debug << G(i, j) << ",";
+//                }
+//                *m_ofs_bsp_debug << std::endl;
+//            }
+//            *m_ofs_bsp_debug << "g0" << std::endl;
+//            for (int i = 0; i < g0.size(); i++) {
+//                *m_ofs_bsp_debug << g0[i] << ",";
+//            }
+//            *m_ofs_bsp_debug << std::endl;
+//            *m_ofs_bsp_debug << "CE" << std::endl;
+//            for (int i = 0; i < CE.rows(); i++) {
+//                for (int j = 0; j < CE.cols(); j++) {
+//                    *m_ofs_bsp_debug << CE(i, j) << ",";
+//                }
+//                *m_ofs_bsp_debug << std::endl;
+//            }
+//            *m_ofs_bsp_debug << "ce0" << std::endl;
+//            for (int i = 0; i < ce0.size(); i++) {
+//                *m_ofs_bsp_debug << ce0[i] << ",";
+//            }
+//            *m_ofs_bsp_debug << std::endl;
+//            *m_ofs_bsp_debug << "CI" << std::endl;
+//            for (int i = 0; i < CI.rows(); i++) {
+//                for (int j = 0; j < CI.cols(); j++) {
+//                    *m_ofs_bsp_debug << CI(i, j) << ",";
+//                }
+//                *m_ofs_bsp_debug << std::endl;
+//            }
+//            *m_ofs_bsp_debug << std::endl;
+//            *m_ofs_bsp_debug << "ci0" << std::endl;
+//            for (int i = 0; i < ci0.size(); i++) {
+//                *m_ofs_bsp_debug << ci0[i] << ",";
+//            }
+//            *m_ofs_bsp_debug << std::endl;
+//#endif
+//            // }}}
+//           return hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
+//        }
+//    }
+//    // dp 返り値の宣言
+//    hrp::dvector dp = hrp::dvector::Zero(m_p.size()); // m_id_max * ((length jlist) + 6) + 1(m_tHit)
+//    for (size_t i = 0; i < k; i++) {
+//        dp.segment((i + m_rarm_indices.at(0)) * m_id_max, c) = dp_modified.segment(i * c, c);
+//    }
+//    return dp;
+//    }}}
 }
 
 

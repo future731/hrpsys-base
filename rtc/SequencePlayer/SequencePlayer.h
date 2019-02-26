@@ -32,6 +32,7 @@
 #include <boost/thread.hpp>
 #include <boost/thread/future.hpp>
 #include <boost/make_shared.hpp>
+#include "onlineTrajectoryModificator.h"
 
 // Service implementation headers
 // <rtc-template block="service_impl_h">
@@ -132,7 +133,7 @@ class SequencePlayer
 
   void setMaxIKError(double pos, double rot);
   void setMaxIKIteration(short iter);
-  hrp::dvector onlineTrajectoryModification();
+  void onlineTrajectoryModification();
  protected:
   // Configuration variable declaration
   // <rtc-template block="config_declare">
@@ -241,6 +242,7 @@ class SequencePlayer
   hrp::dvector m_p;
   hrp::dvector m_last_target; // 6dof so far
   hrp::dvector m_target; // 6dof so far
+  boost::shared_ptr<OnlineTrajectoryModificatorMT> m_modificator;
   boost::shared_ptr<boost::packaged_task<hrp::dvector> > m_task;
   boost::future<hrp::dvector> m_future;
   boost::shared_ptr<boost::thread> m_thread;
