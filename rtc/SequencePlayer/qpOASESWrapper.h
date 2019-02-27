@@ -9,6 +9,7 @@
 #ifndef QPOASESWRAPPER_H
 #define QPOASESWRAPPER_H
 
+#include <fstream>
 #include <boost/shared_ptr.hpp>
 #include <qpOASES.hpp>
 #include <Eigen/Core>
@@ -25,6 +26,7 @@ void setUpQPParam(qpOASES::real_t* raw_mat, const hrp::dmatrix& hrp_dmat);
 void setUpQPParam(qpOASES::real_t* raw_arr, const hrp::dvector& hrp_dvec);
 
 double solve_strict_qp(
+        const boost::shared_ptr<std::ofstream>& ofs_bsp_debug,
         // const hrp::dvector& initial_state,
         const hrp::dvector& state_min_vector,
         const hrp::dvector& state_max_vector,
@@ -39,6 +41,7 @@ double solve_strict_qp(
         );
 
 double solve_mild_qp(
+        const boost::shared_ptr<std::ofstream>& ofs_bsp_debug,
         // const hrp::dvector& initial_state,
         const hrp::dvector& state_min_vector,
         const hrp::dvector& state_max_vector,

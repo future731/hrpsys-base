@@ -18,6 +18,7 @@ void setUpQPParam(qpOASES::real_t* raw_arr, const hrp::dvector& hrp_dvec)
 }
 
 double solve_strict_qp(
+        const boost::shared_ptr<std::ofstream>& ofs_bsp_debug,
         // const hrp::dvector& initial_state,
         const hrp::dvector& state_min_vector,
         const hrp::dvector& state_max_vector,
@@ -77,41 +78,42 @@ double solve_strict_qp(
   real_t max_cputime_sec[1] = { 1 };
   returnValue qp_return_value = qp.init(H, g, A, lb, ub, lbAx, ubAx, nWSR, max_cputime_sec);
   if (qp_return_value == SUCCESSFUL_RETURN) {
-    std::cout << "qp succeeded" << std::endl;
+    //
   } else if (qp_return_value == RET_INIT_FAILED) {
-    std::cout << "qp init failed" << std::endl;
+    *ofs_bsp_debug << "qp init failed" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INIT_FAILED_CHOLESKY) {
-    std::cout << "qp init failed cholesky" << std::endl;
+    *ofs_bsp_debug << "qp init failed cholesky" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INIT_FAILED_TQ) {
-    std::cout << "qp init failed tq" << std::endl;
+    *ofs_bsp_debug << "qp init failed tq" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INIT_FAILED_HOTSTART) {
-    std::cout << "qp init failed hotstart" << std::endl;
+    *ofs_bsp_debug << "qp init failed hotstart" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INIT_FAILED_UNBOUNDEDNESS) {
-    std::cout << "qp init failed unboundness" << std::endl;
+    *ofs_bsp_debug << "qp init failed unboundness" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_MAX_NWSR_REACHED){
-    std::cout << "qp max nwsr reached" << std::endl;
+    *ofs_bsp_debug << "qp max nwsr reached" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INVALID_ARGUMENTS) {
-    std::cout << "qp init invalid arguments" << std::endl;
+    *ofs_bsp_debug << "qp init invalid arguments" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else {
-    std::cout << "unknown qp status: " << qp_return_value << std::endl;
+    *ofs_bsp_debug << "unknown qp status: " << qp_return_value << std::endl;
     return std::numeric_limits<double>::infinity();
   }
   boost::shared_ptr<real_t> x_opt_shptr(new real_t[x_size]);
   real_t* x_opt = x_opt_shptr.get();
   returnValue primal_solution_value = qp.getPrimalSolution(x_opt);
   if (primal_solution_value == SUCCESSFUL_RETURN) {
-      std::cout << "qp primal solution succeeded" << std::endl;
+    //
   } else if (primal_solution_value == RET_QP_NOT_SOLVED) {
-      std::cout << "qp not solved" << std::endl;
+      *ofs_bsp_debug << "qp not solved" << std::endl;
   } else {
-    std::cout << "unknown qp primal solution status: " << primal_solution_value << std::endl;
+    *ofs_bsp_debug << "unknown qp primal solution status: " << primal_solution_value << std::endl;
+    return std::numeric_limits<double>::infinity();
   }
   for (int i = 0; i < result_vector.size(); i++) {
       result_vector[i] = x_opt[i];
@@ -121,6 +123,7 @@ double solve_strict_qp(
 
 // equality condition is eased
 double solve_mild_qp(
+        const boost::shared_ptr<std::ofstream>& ofs_bsp_debug,
         // const hrp::dvector& initial_state,
         const hrp::dvector& state_min_vector,
         const hrp::dvector& state_max_vector,
@@ -189,41 +192,42 @@ double solve_mild_qp(
   real_t max_cputime_sec[1] = { 1 };
   returnValue qp_return_value = qp.init(H, g, B, lb, ub, lbBx, ubBx, nWSR, max_cputime_sec);
   if (qp_return_value == SUCCESSFUL_RETURN) {
-    std::cout << "qp succeeded" << std::endl;
+    //
   } else if (qp_return_value == RET_INIT_FAILED) {
-    std::cout << "qp init failed" << std::endl;
+    *ofs_bsp_debug << "qp init failed" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INIT_FAILED_CHOLESKY) {
-    std::cout << "qp init failed cholesky" << std::endl;
+    *ofs_bsp_debug << "qp init failed cholesky" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INIT_FAILED_TQ) {
-    std::cout << "qp init failed tq" << std::endl;
+    *ofs_bsp_debug << "qp init failed tq" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INIT_FAILED_HOTSTART) {
-    std::cout << "qp init failed hotstart" << std::endl;
+    *ofs_bsp_debug << "qp init failed hotstart" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INIT_FAILED_UNBOUNDEDNESS) {
-    std::cout << "qp init failed unboundness" << std::endl;
+    *ofs_bsp_debug << "qp init failed unboundness" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_MAX_NWSR_REACHED){
-    std::cout << "qp max nwsr reached" << std::endl;
+    *ofs_bsp_debug << "qp max nwsr reached" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else if (qp_return_value == RET_INVALID_ARGUMENTS) {
-    std::cout << "qp init invalid arguments" << std::endl;
+    *ofs_bsp_debug << "qp init invalid arguments" << std::endl;
     return std::numeric_limits<double>::infinity();
   } else {
-    std::cout << "unknown qp status: " << qp_return_value << std::endl;
+    *ofs_bsp_debug << "unknown qp status: " << qp_return_value << std::endl;
     return std::numeric_limits<double>::infinity();
   }
   boost::shared_ptr<real_t> x_opt_shptr(new real_t[x_size]);
   real_t* x_opt = x_opt_shptr.get();
   returnValue primal_solution_value = qp.getPrimalSolution(x_opt);
   if (primal_solution_value == SUCCESSFUL_RETURN) {
-      std::cout << "qp primal solution succeeded" << std::endl;
+    //
   } else if (primal_solution_value == RET_QP_NOT_SOLVED) {
-      std::cout << "qp not solved" << std::endl;
+      *ofs_bsp_debug << "qp not solved" << std::endl;
   } else {
-    std::cout << "unknown qp primal solution status: " << primal_solution_value << std::endl;
+    *ofs_bsp_debug << "unknown qp primal solution status: " << primal_solution_value << std::endl;
+    return std::numeric_limits<double>::infinity();
   }
   for (int i = 0; i < result_vector.size(); i++) {
       result_vector[i] = x_opt[i];

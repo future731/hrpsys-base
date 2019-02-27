@@ -614,7 +614,7 @@ bool JointPathEx::calcInverseKinematics2(const Vector3& end_p, const Matrix33& e
       }
 
         
-      // エンドエフェクタでの誤差
+      // エンドエフェクタ(道具あり)での誤差
       Vector3 dp(end_p - (target->R * localPos + target->p));
       Vector3 omega((target->R * localR) * omegaFromRotEx((target->R * localR).transpose() * end_R));
       // 右手最終リンクでの誤差

@@ -78,6 +78,7 @@ SequencePlayer::SequencePlayer(RTC::Manager* manager)
       m_p(hrp::dvector::Zero(0)),
       m_target(hrp::dvector::Zero(6)),
       m_last_target(hrp::dvector::Zero(6)),
+      m_hit_plane_initialized(false),
       m_qp_ready(false),
       m_qp_last_ready(false)
 {
@@ -385,16 +386,6 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
           m_tCurrent += dt;
           if (m_isTargetValid) {
             this->onlineTrajectoryModification();
-            /*
-            *m_ofs_bsp_debug << "dp: " << std::endl;
-            for (int i = 0; i < m_bsplines_length; i++) {
-                for (int j = 0; j < m_id_max; j++) {
-                    *m_ofs_bsp_debug << dp[m_id_max * i + j] << " ";
-                }
-                *m_ofs_bsp_debug << std::endl;
-            }
-            *m_ofs_bsp_debug << dp[dp.size() - 1] << std::endl;
-            */
           }
         }
 
@@ -408,7 +399,16 @@ RTC::ReturnCode_t SequencePlayer::onExecute(RTC::UniqueId ec_id)
         }
 
         if (m_qp_ready) {
+          *m_ofs_bsp_debug << "dp is modified" << std::endl;
           hrp::dvector dp = m_future.get();
+          *m_ofs_bsp_debug << "dp: " << std::endl;
+          for (int i = 0; i < m_bsplines_length; i++) {
+              for (int j = 0; j < m_id_max; j++) {
+                  *m_ofs_bsp_debug << dp[m_id_max * i + j] << " ";
+              }
+              *m_ofs_bsp_debug << std::endl;
+          }
+          *m_ofs_bsp_debug << dp[dp.size() - 1] << std::endl;
           m_p += dp;
         }
 
@@ -1261,16 +1261,20 @@ void SequencePlayer::onlineTrajectoryModification(){
     double vx = m_hitTarget.velocity.vx;
     double vy = m_hitTarget.velocity.vy;
     double vz = m_hitTarget.velocity.vz;
-    double px = p_ground_to_racket_expected[0];
-    double py = p_ground_to_racket_expected[1];
+    if (not m_hit_plane_initialized) {
+      // somewhat px and py does not follow with bspline param sometimes
+      m_px = p_ground_to_racket_expected[0];
+      m_py = p_ground_to_racket_expected[1];
+      m_hit_plane_initialized = true;
+    }
     OpenHRP::dSequence var = m_hitTarget.pos_and_vel_covariance;
-    double k_hit = (vy * x - vx * y) / (vy * px - vx * py);
-    double hit_pos_x = k_hit * px;
-    double hit_pos_y = k_hit * py;
+    double k_hit = (vy * x - vx * y) / (vy * m_px - vx * m_py);
+    double hit_pos_x = k_hit * m_px;
+    double hit_pos_y = k_hit * m_py;
     double ttc = (hit_pos_x - x) / vx;
     *m_ofs_bsp_debug << "x: " << x << " vx: " << vx <<  " y: " << y << " vy: " << vy << " z: " << z << " vz: " << vz << std::endl;
     // *m_ofs_bsp_debug << "expected ee pos: " << p_ground_to_end_effector_expected.transpose() << std::endl;
-    *m_ofs_bsp_debug << "expected ground_to_racket pos px, py, pz: " << p_ground_to_racket_expected.transpose() << std::endl;
+    *m_ofs_bsp_debug << "expected ground_to_racket pos: " << p_ground_to_racket_expected.transpose() << std::endl;
     // *m_ofs_bsp_debug << "expected ground_to_racket rotation: " << std::endl;
     // *m_ofs_bsp_debug << R_ground_to_racket_expected << std::endl;
     *m_ofs_bsp_debug << "expected ground_to_racket rpy: " << rpyFromRot(R_ground_to_racket_expected).transpose() << std::endl;
@@ -1338,8 +1342,10 @@ void SequencePlayer::onlineTrajectoryModification(){
     hrp::Matrix33 R_ground_to_rarm = R_ground_to_racket * m_R_racket_to_rarm;
     */
 
-    m_modificator = boost::shared_ptr<OnlineTrajectoryModificatorMT>(new OnlineTrajectoryModificatorMT(m_robot, m_rarm_indices, dt, m_ofs_bsp_debug, std::string(m_profile.instance_name), p_ground_to_racket, R_ground_to_racket, m_p_rarm_to_racket, m_R_rarm_to_racket, m_p, online_modified_min_id, online_modified_max_id_1, hit_pose, m_bsplines, m_tCurrent, m_tHit, m_id_max)); // boost takes up to 9 arguments
+    m_modificator = boost::shared_ptr<OnlineTrajectoryModificatorMT>(new OnlineTrajectoryModificatorMT(m_robot, m_rarm_indices, dt, m_ofs_bsp_debug, std::string(m_profile.instance_name), p_ground_to_racket, R_ground_to_racket, m_p_rarm_to_racket, m_R_rarm_to_racket, m_p, online_modified_min_id, online_modified_max_id_1, hit_pose, m_bsplines, m_tCurrent, m_tHit, m_id_max)); // boost::make_shared takes up to 9 arguments
     m_task = boost::make_shared<boost::packaged_task<hrp::dvector> >(boost::bind(&OnlineTrajectoryModificatorMT::calc, m_modificator.get()));
+    m_qp_ready = false;
+    m_qp_last_ready = false;
     m_future = m_task->get_future();
     m_thread = boost::make_shared<boost::thread>(boost::move(*m_task));
 

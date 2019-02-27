@@ -83,21 +83,28 @@ public:
     m_robot_copy->calcForwardKinematics();
     std::vector<Link*> online_modified_jlist
       = std::vector<Link*>(m_robot_copy->joints().begin() + m_rarm_indices.at(0),
-          m_robot_copy->joints().begin() + m_rarm_indices.at(m_rarm_indices.size() - 1));
+          m_robot_copy->joints().begin() + m_rarm_indices.at(m_rarm_indices.size() - 1) + 1);
     int k = online_modified_jlist.size(); // joint size
     int c = m_online_modified_max_id_1 - m_online_modified_min_id; // bspline control point time index
     std::string base_parent_name = m_robot_copy->joint(m_rarm_indices.at(0))->parent->name;
     std::string target_name = m_robot_copy->joint(m_rarm_indices.at(m_rarm_indices.size() - 1))->name;
     hrp::JointPathExPtr manip = hrp::JointPathExPtr(new hrp::JointPathEx(m_robot_copy, m_robot_copy->link(base_parent_name), m_robot_copy->link(target_name), m_dt, true, m_instance_name));
-    double ik_error_pos = 0.010;
-    double ik_error_rot = 1.57;
+    double ik_error_pos = 1.0e-4;
+    double ik_error_rot = 1.57 / 8.0;
     manip->setMaxIKError(ik_error_pos, ik_error_rot);
-    short ik_iteration = 200;
+    short ik_iteration = 300;
     manip->setMaxIKIteration(ik_iteration);
+    *m_ofs_bsp_debug << "calced tennis racket p before: " << (m_robot_copy->link(target_name)->R * m_p_rarm_to_racket + m_robot_copy->link(target_name)->p).eval().transpose() << std::endl;
+    *m_ofs_bsp_debug << "calced tennis racket R before: " << std::endl;
+    *m_ofs_bsp_debug << m_robot_copy->link(target_name)->R * m_R_rarm_to_racket << std::endl;
+
     struct timeval time_ik_s, time_ik_e;
     gettimeofday(&time_ik_s, NULL);
     bool ik_succeeded = manip->calcInverseKinematics2(m_p_ground_to_racket, m_R_ground_to_racket, m_p_rarm_to_racket, m_R_rarm_to_racket);
     gettimeofday(&time_ik_e, NULL);
+    *m_ofs_bsp_debug << "calced tennis racket p after: " << (m_robot_copy->link(target_name)->R * m_p_rarm_to_racket + m_robot_copy->link(target_name)->p).eval().transpose() << std::endl;
+    *m_ofs_bsp_debug << "calced tennis racket R after: " << std::endl;
+    *m_ofs_bsp_debug << m_robot_copy->link(target_name)->R * m_R_rarm_to_racket << std::endl;
     *m_ofs_bsp_debug << "elapsed time ik: " << time_ik_e.tv_sec - time_ik_s.tv_sec + (time_ik_e.tv_usec - time_ik_s.tv_usec)*1.0e-6 << "[s]" << std::endl;
     if (!ik_succeeded) {
       *m_ofs_bsp_debug << "[OnlineTrajectoryModificator] ik failed" << std::endl;
@@ -185,16 +192,21 @@ public:
       double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
       // *m_ofs_bsp_debug << "opt: " << opt << std::endl;
 #else
-      double opt = solve_strict_qp(state_min_vector, state_max_vector,
+      double opt = solve_strict_qp(m_ofs_bsp_debug, state_min_vector, state_max_vector,
               eval_weight_matrix, eval_coeff_vector,
               equality_matrix, equality_coeff_vector,
               inequality_matrix, inequality_min_vector, inequality_max_vector,
               tmp_dp_modified);
+      // *m_ofs_bsp_debug << "equality_coeff_vector" << std::endl;
+      // *m_ofs_bsp_debug << equality_coeff_vector.transpose() << std::endl;
+      // *m_ofs_bsp_debug << "equality_coeff_vector calced" << std::endl;
+      // *m_ofs_bsp_debug << (equality_matrix * tmp_dp_modified).eval().transpose() << std::endl;
+
       // hrp::dmatrix equality_weight_matrix = hrp::dmatrix::Zero(c, c);
       // equality_weight_matrix(0, 0) = 1.0; // current position equality
       // equality_weight_matrix(1, 1) = 0.5; // current speed equality
       // equality_weight_matrix(2, 2) = 0.4; // target position equality
-      // double opt = solve_mild_qp(state_min_vector, state_max_vector,
+      // double opt = solve_mild_qp(m_ofs_bsp_debug, state_min_vector, state_max_vector,
       //         eval_weight_matrix, eval_coeff_vector,
       //         equality_matrix, equality_coeff_vector, equality_weight_matrix,
       //         inequality_matrix, inequality_min_vector, inequality_max_vector,
@@ -359,6 +371,7 @@ public:
         return hrp::dvector::Zero(m_p.size());
       }
     }
+    *m_ofs_bsp_debug << "qp succeeded" << std::endl;
     hrp::dvector dp = hrp::dvector::Zero(m_p.size());
     for (size_t i = 0; i < k; i++) {
       dp.segment((i + m_rarm_indices.at(0)) * m_id_max, c) = dp_modified.segment(i * c, c);
