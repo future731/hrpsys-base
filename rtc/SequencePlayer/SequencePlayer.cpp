@@ -1137,7 +1137,7 @@ void SequencePlayer::onlineTrajectoryModification(){
 #warning TODO ターゲットが正しいか判定 フィルタかけるかも
     struct timeval time_s, time_e;
     gettimeofday(&time_s, NULL);
-
+// {{{ old
 //    const double epsilon = 2.22507e-308;
 //    bsplineのサイズは1以上，その関節は動き始める前提?
 //    BSpline::BSpline bspline = m_bsplines.at(0);
@@ -1343,6 +1343,7 @@ void SequencePlayer::onlineTrajectoryModification(){
 //    hrp::Vector3 p_ground_to_rarm = R_ground_to_racket * m_p_racket_to_rarm + p_ground_to_racket;
 //    hrp::Matrix33 R_ground_to_rarm = R_ground_to_racket * m_R_racket_to_rarm;
 //    */
+//    }}}
 
     m_modificator = boost::shared_ptr<OnlineTrajectoryModificatorMT>(new OnlineTrajectoryModificatorMT(
                 m_robot,
