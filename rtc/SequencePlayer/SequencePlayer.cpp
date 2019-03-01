@@ -1138,6 +1138,9 @@ void SequencePlayer::setMaxIKIteration(short iter){
  */
 void SequencePlayer::onlineTrajectoryModification(){
 #warning TODO ターゲットが正しいか判定 フィルタかけるかも
+    struct timeval time_s, time_e;
+    gettimeofday(&time_s, NULL);
+
     const double epsilon = 2.22507e-308;
     // bsplineのサイズは1以上，その関節は動き始める前提?
     BSpline::BSpline bspline = m_bsplines.at(0);
@@ -1298,6 +1301,8 @@ void SequencePlayer::onlineTrajectoryModification(){
 
     if (var_trace > 2.0 or ttc > m_tHit or ttc < 0.0) {
         *m_ofs_bsp_debug << "target is not valid" << std::endl;
+        gettimeofday(&time_e, NULL);
+        *m_ofs_bsp_debug << "onlineTrajectoryModification elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6 << "[s]" << std::endl;
         return;
     }
     static bool is_first_valid_target = true;
@@ -1639,6 +1644,8 @@ void SequencePlayer::onlineTrajectoryModification(){
 //    }
 //    return dp;
 //    }}}
+    gettimeofday(&time_e, NULL);
+    *m_ofs_bsp_debug << "onlineTrajectoryModification elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6 << "[s]" << std::endl;
 }
 
 
