@@ -242,9 +242,6 @@ class SequencePlayer
   hrp::dvector m_p;
   hrp::dvector m_target; // 6dof so far
   hrp::dvector m_last_target; // 6dof so far
-  double m_px; // racket hit plane x (no need for normalization)
-  double m_py; // racket hit plane y (no need for normalization)
-  bool m_hit_plane_initialized;
   boost::shared_ptr<OnlineTrajectoryModificatorMT> m_modificator;
   boost::shared_ptr<boost::packaged_task<hrp::dvector> > m_task;
   boost::future<hrp::dvector> m_future;
