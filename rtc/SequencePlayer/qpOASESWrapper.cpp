@@ -1,5 +1,17 @@
-#include "qpOASESWrapper.h"
+// -*- C++ -*-
+/*!
+ * @file  qpOASESWrapper.h
+ * @brief for qpOASES
+ * @date  $Date$
+ *
+ * $Id$
+ */
+
+#ifdef USE_QPOASES_IN_SEQUENCER
 #include <iostream>
+#include "qpWrapper.h"
+#include <qpOASES.hpp>
+#include <hrpUtil/EigenTypes.h>
 
 void setUpQPParam(qpOASES::real_t* raw_mat, const hrp::dmatrix& hrp_dmat)
 {
@@ -121,7 +133,7 @@ double solve_strict_qp(
   return qp.getObjVal();
 }
 
-// equality condition is eased
+/* {{{ // equality condition is eased
 double solve_mild_qp(
         const boost::shared_ptr<std::ofstream>& ofs_bsp_debug,
         // const hrp::dvector& initial_state,
@@ -234,3 +246,6 @@ double solve_mild_qp(
   }
   return qp.getObjVal();
 }
+}}}  */
+
+#endif // USE_QPOASES_IN_SEQUENCER

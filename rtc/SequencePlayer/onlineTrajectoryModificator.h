@@ -6,11 +6,7 @@
 #include "../ImpedanceController/JointPathEx.h"
 #include "bspline.h"
 
-#ifdef USE_QPOASES_IN_SEQUENCER
-#include "qpOASESWrapper.h"
-#else
-#include "eiquadprog.h"
-#endif
+#include "qpWrapper.h"
 
 class OnlineTrajectoryModificatorMT
 {
@@ -173,45 +169,12 @@ public:
       inequality_max_vector -= offset_vels;
       hrp::dvector tmp_dp_modified = hrp::dvector::Zero(c);
 
-#ifndef USE_QPOASES_IN_SEQUENCER
-#warning ここconst参照的なものにできないか確かめる
-      hrp::dmatrix G = eval_weight_matrix;
-      hrp::dvector g0 = eval_coeff_vector;
-      hrp::dmatrix CE = equality_matrix;
-      hrp::dvector ce0 = -equality_coeff_vector; // sign inversion is needed; in eus interface, equality-coeff signature is inverted when passing it to c++ eiquagprog source
-      hrp::dmatrix CI = hrp::dmatrix::Zero(2 * (c - 1) + 2 * c, c);
-      CI.block(0, 0, c, c) = hrp::dmatrix::Identity(c, c);
-      CI.block(c, 0, c, c) = -hrp::dmatrix::Identity(c, c);
-      CI.block(c * 2, 0, c - 1, c) = inequality_matrix;
-      CI.block(c * 2 + c - 1, 0, c - 1, c) = -inequality_matrix;
-      hrp::dvector ci0 = hrp::dvector::Zero(2 * (c - 1) + 2 * c);
-      ci0.segment(0, c) = -state_min_vector;
-      ci0.segment(c, c) = state_max_vector;
-      ci0.segment(c * 2, c - 1) = -inequality_min_vector;
-      ci0.segment(c * 2 + c - 1, c - 1) = inequality_max_vector;
-      double opt = Eigen::solve_quadprog(G, g0, CE.transpose(), ce0, CI.transpose(), ci0, tmp_dp_modified);
-      // *m_ofs_bsp_debug << "opt: " << opt << std::endl;
-#else
+      // equal condition is equal
       double opt = solve_strict_qp(m_ofs_bsp_debug, state_min_vector, state_max_vector,
               eval_weight_matrix, eval_coeff_vector,
               equality_matrix, equality_coeff_vector,
               inequality_matrix, inequality_min_vector, inequality_max_vector,
               tmp_dp_modified);
-      // *m_ofs_bsp_debug << "equality_coeff_vector" << std::endl;
-      // *m_ofs_bsp_debug << equality_coeff_vector.transpose() << std::endl;
-      // *m_ofs_bsp_debug << "equality_coeff_vector calced" << std::endl;
-      // *m_ofs_bsp_debug << (equality_matrix * tmp_dp_modified).eval().transpose() << std::endl;
-
-      // hrp::dmatrix equality_weight_matrix = hrp::dmatrix::Zero(c, c);
-      // equality_weight_matrix(0, 0) = 1.0; // current position equality
-      // equality_weight_matrix(1, 1) = 0.5; // current speed equality
-      // equality_weight_matrix(2, 2) = 0.4; // target position equality
-      // double opt = solve_mild_qp(m_ofs_bsp_debug, state_min_vector, state_max_vector,
-      //         eval_weight_matrix, eval_coeff_vector,
-      //         equality_matrix, equality_coeff_vector, equality_weight_matrix,
-      //         inequality_matrix, inequality_min_vector, inequality_max_vector,
-      //         tmp_dp_modified);
-#endif
       if (std::isfinite(opt)) {
           dp_modified.segment(j_k_id * c, c) = tmp_dp_modified;
       } else {
@@ -231,7 +194,6 @@ public:
             << " hit velocity: " << offset_vels[j_k_id]
             << " max velocity: " << velocity_max_limit[j_k_id]
             << std::endl;
-#ifdef USE_QPOASES_IN_SEQUENCER
         *m_ofs_bsp_debug << "state_min_vector" << std::endl;
         for (int i = 0; i < state_min_vector.size(); i++) {
             *m_ofs_bsp_debug << state_min_vector[i];
@@ -328,45 +290,6 @@ public:
         }
         *m_ofs_bsp_debug << ";" << std::endl;
 
-#else
-        *m_ofs_bsp_debug << "G" << std::endl;
-        for (int i = 0; i < G.rows(); i++) {
-            for (int j = 0; j < G.cols(); j++) {
-                *m_ofs_bsp_debug << G(i, j) << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-        }
-        *m_ofs_bsp_debug << "g0" << std::endl;
-        for (int i = 0; i < g0.size(); i++) {
-            *m_ofs_bsp_debug << g0[i] << ",";
-        }
-        *m_ofs_bsp_debug << std::endl;
-        *m_ofs_bsp_debug << "CE" << std::endl;
-        for (int i = 0; i < CE.rows(); i++) {
-            for (int j = 0; j < CE.cols(); j++) {
-                *m_ofs_bsp_debug << CE(i, j) << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-        }
-        *m_ofs_bsp_debug << "ce0" << std::endl;
-        for (int i = 0; i < ce0.size(); i++) {
-            *m_ofs_bsp_debug << ce0[i] << ",";
-        }
-        *m_ofs_bsp_debug << std::endl;
-        *m_ofs_bsp_debug << "CI" << std::endl;
-        for (int i = 0; i < CI.rows(); i++) {
-            for (int j = 0; j < CI.cols(); j++) {
-                *m_ofs_bsp_debug << CI(i, j) << ",";
-            }
-            *m_ofs_bsp_debug << std::endl;
-        }
-        *m_ofs_bsp_debug << std::endl;
-        *m_ofs_bsp_debug << "ci0" << std::endl;
-        for (int i = 0; i < ci0.size(); i++) {
-            *m_ofs_bsp_debug << ci0[i] << ",";
-        }
-        *m_ofs_bsp_debug << std::endl;
-#endif
         // }}}
         return hrp::dvector::Zero(m_p.size());
       }
