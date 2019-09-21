@@ -257,6 +257,13 @@ public:
         *m_ofs_bsp_debug << "onlineTrajectoryModification elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6 << "[s]" << std::endl;
         return hrp::dvector::Zero(m_p.size());
     }
+    if (var_trace < 0.6) {
+        *m_ofs_bsp_debug << "target is converged." << std::endl;
+        gettimeofday(&time_e, NULL);
+        *m_ofs_bsp_debug << "onlineTrajectoryModification elapsed time: " << time_e.tv_sec - time_s.tv_sec + (time_e.tv_usec - time_s.tv_usec)*1.0e-6 << "[s]" << std::endl;
+        return hrp::dvector::Zero(m_p.size());
+    }
+
     if (m_is_first_valid_target) {
         m_is_first_valid_target = false;
         m_last_target = m_target;
