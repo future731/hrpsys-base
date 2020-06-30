@@ -226,7 +226,9 @@ public:
     double k_hit = (vy * x - vx * y) / (vy * m_px - vx * m_py);
     double hit_pos_x = k_hit * m_px;
     double hit_pos_y = k_hit * m_py;
-    double ttc = (hit_pos_x - x) / vx;
+    // call service delay
+    double ttc_margin = 0.4;
+    double ttc = (hit_pos_y - y) / vy - ttc_margin;
     *m_ofs_bsp_debug << "x: " << x << " vx: " << vx <<  " y: " << y << " vy: " << vy << " z: " << z << " vz: " << vz << std::endl;
     // *m_ofs_bsp_debug << "expected ee pos: " << p_ground_to_end_effector_expected.transpose() << std::endl;
     *m_ofs_bsp_debug << "expected ground_to_racket pos: " << p_ground_to_racket_expected.transpose() << std::endl;
