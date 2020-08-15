@@ -236,7 +236,14 @@ RTC::ReturnCode_t SequencePlayer::onInitialize()
         << std::setw(2) << min << "-"
         << std::setw(2) << sec
         << std::setfill(' ');
-    std::string fname_debug = "/userdir/logs/hrpsys_bsp_"
+    std::ifstream ifs_date("/userdir/timestamp.txt");
+    std::string timestamp_str_in;
+    if (ifs_date) {
+        ifs_date >> timestamp_str_in;
+    } else {
+        timestamp_str_in = "";
+    }
+    std::string fname_debug = "/userdir/logs/" + timestamp_str_in + "hrpsys_bsp_"
         + oss_date.str() + ".log";
     m_ofs_bsp_debug = boost::shared_ptr<std::ofstream>(new std::ofstream(fname_debug.c_str()));
     *m_ofs_bsp_debug << "###### bsp log start: " << oss_date.str() << std::endl;
